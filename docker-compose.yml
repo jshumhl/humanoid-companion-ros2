@@ -1,0 +1,19 @@
+#version: '3.8'
+
+services:
+  ros2:
+    image: ros:humble-ros-base
+    platform: linux/arm64
+    container_name: companion-dev
+    volumes:
+      - ~/robotics/humanoid-companion-ros2:/workspace
+      - /tmp/.X11-unix:/tmp/.X11-unix
+    environment:
+      - DISPLAY=host.docker.internal:0
+      - ROS_DOMAIN_ID=0
+    network_mode: host
+    #devices:
+    #  - /dev/video0:/dev/video0
+    stdin_open: true
+    tty: true
+    command: /bin/bash
