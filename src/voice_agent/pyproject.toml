@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "voice_agent"
+version = "0.1.0"
+description = "Conversational voice agent for 巴克机器人"
+requires-python = ">=3.10"
+dependencies = [
+    "object_narrator",
+    "pyyaml",
+    "numpy",
+    "requests",
+    "sounddevice",
+]
+
+[project.optional-dependencies]
+vad = ["webrtcvad-wheels"]
+
+[tool.setuptools]
+packages = ["voice_agent", "voice_agent.providers"]

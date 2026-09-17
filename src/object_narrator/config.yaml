@@ -1,0 +1,17 @@
+# Camera index (0 = default webcam), /dev/videoN, or path to a video file.
+source: 0
+
+# zh-CN (Mandarin, Simplified) | zh-TW (Mandarin, Traditional) | zh-HK (Cantonese)
+language: zh-CN
+
+# Minimum detection confidence, 0-1.
+confidence: 0.5
+
+# --- Optional ---
+# model: yolo26n.pt        # downloaded automatically on first run
+# imgsz: 640               # inference image size; lower is faster on CPU
+# interval_sec: 1.0        # time between detections (video time for files)
+# stable_frames: 2         # detections a scene must persist before it is spoken
+# announce_empty: false    # speak when nothing is detected
+# voice: zh-CN-YunxiNeural # any edge-tts voice; run `edge-tts --list-voices`
+# player: mpg123 -q        # MP3 player command; auto-detected if unset

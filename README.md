@@ -25,6 +25,15 @@ state machine enters `CONVERSATION`.
 | `companion_speech` | Speech recognition, language model, and synthesis |
 | `companion_msgs` | Custom message and service definitions |
 
+Standalone modules (no ROS required):
+
+| Module | Purpose |
+|---|---|
+| [`object_narrator`](src/object_narrator/README.md) | YOLO26n object detection spoken as a Chinese sentence via edge-tts |
+| [`voice_agent`](src/voice_agent/README.md) | Push-to-talk voice agent for 巴克机器人: ASR → LLM with tools → TTS |
+
+First-time setup on Ubuntu 22.04: [SETUP.md](SETUP.md).
+
 ## Requirements
 
 - ROS2 Humble

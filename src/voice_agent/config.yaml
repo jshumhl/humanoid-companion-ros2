@@ -1,0 +1,79 @@
+# voice_agent configuration.
+#
+# Secrets never go in this file. The provider is chosen by the LLM_PROVIDER
+# environment variable and its API key comes from the environment too
+# (DASHSCOPE_API_KEY for DashScope); see SETUP.md.
+
+# Camera source, language (zh-CN | zh-TW | zh-HK) and the edge-tts voice/player
+# are shared with object_narrator. Path is relative to this file.
+narrator_config: ../object_narrator/config.yaml
+
+audio:
+  # Microphone: sounddevice index or name; null = system default input.
+  # List devices with: python -m voice_agent --list-devices
+  input_device: null
+  sample_rate: 16000       # ASR works best at 16000
+  max_record_sec: 20       # recording is cut off after this
+  min_record_sec: 0.3      # shorter recordings are treated as "not heard"
+
+  # Voice activity detection instead of push-to-talk. Needs:
+  #   pip install webrtcvad-wheels
+  vad:
+    enabled: false
+    aggressiveness: 2      # 0-3; higher filters more background noise
+    silence_ms: 800        # this much silence ends an utterance
+    start_timeout_sec: 10  # stop waiting if nobody speaks
+
+speech_output:
+  # edge-tts: object_narrator's Speaker (voice set in the narrator config).
+  # provider: the provider's own TTS, falling back to edge-tts if it fails.
+  engine: edge-tts
+  # Spoken phrases are cached here so fallback phrases work offline.
+  cache_dir: ~/.cache/voice_agent/tts
+
+timeouts:                  # seconds; a slower call counts as "offline"
+  asr_sec: 15
+  llm_sec: 20
+  tts_sec: 20
+  tool_sec: 20             # first look_around also loads the YOLO model
+
+conversation:
+  max_history_turns: 10    # user/assistant pairs kept as context
+  max_reply_sentences: 3   # longer model replies are cut to this
+
+# Per-provider settings. Only the section for the active LLM_PROVIDER is used.
+providers:
+  dashscope:
+    llm_model: qwen-plus-character
+    asr_model: qwen-audio-3.0-asr-flash
+    tts_model: qwen-audio-3.0-tts-plus   # used only when speech_output.engine: provider
+    tts_voice: longanyang
+
+# Persona and reply rules. {tools} is replaced with the tool list at startup.
+system_prompt: |
+  你是巴克机器人，一个友好的人形陪伴机器人。你说的每一句话都会被直接朗读出来。
+
+  说话规则：
+  - 用简体中文口语回答，每次两到三句话，简短自然。
+  - 不要使用列表、表情符号、Markdown 或英文。
+  - 有人问你是谁时，回答以"我是巴克机器人。"开头。
+  - 不要提到程序、接口、模型、错误代码等技术内容。
+
+  输出格式：
+  只输出一个 JSON 对象，不要输出任何其他文字。
+  直接回答：{"say": "要说的话"}
+  使用工具：{"tool": "工具名", "args": {}}
+
+  可用工具：
+  {tools}
+
+  当用户问你看到了什么、周围有什么、面前有什么，或任何需要看的问题时，
+  必须调用 look_around，不要猜测。look_around 返回的句子会原样朗读给用户，不要改写。
+
+# Fixed phrases spoken when something goes wrong. Keep them friendly and
+# non-technical. They are cached as audio at startup so they work offline.
+fallback_phrases:
+  not_heard: 我没听清，可以再说一遍吗？
+  offline: 我现在连不上网络，请稍后再试。
+  error: 抱歉，我刚才走神了，请再说一遍。
+  tool_failed: 抱歉，我现在看不清周围。

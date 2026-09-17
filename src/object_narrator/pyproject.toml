@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "object_narrator"
+version = "0.1.0"
+description = "Detect objects with YOLO26n and describe them aloud in Chinese"
+requires-python = ">=3.10"
+dependencies = [
+    "ultralytics>=8.4.0",
+    "opencv-python",
+    "edge-tts>=7.0",
+    "pyyaml",
+]
+
+[tool.setuptools]
+packages = ["object_narrator"]
