@@ -91,6 +91,7 @@ option. The main ones:
 | `providers.dashscope.*` | see file | Model names |
 | `system_prompt` | persona | Must contain `{tools}`, which is replaced with the tool list |
 | `fallback_phrases.*` | Chinese phrases | `not_heard`, `offline`, `error`, `tool_failed` |
+| `offline_menu.*` | 3 options | Spoken menu offered when the provider is unreachable (below) |
 
 The config is checked when it loads. Errors name the key and the problem, for example:
 
@@ -107,6 +108,48 @@ Config error: Unknown key(s) audio.sample_rat. Allowed: audio.input_device, audi
 | Network down, DNS failure, timeout, 5xx | 我现在连不上网络，请稍后再试。 | `WARNING ... unreachable` |
 | Auth, quota, bad model, malformed JSON reply | 抱歉，我刚才走神了，请再说一遍。 | `WARNING ... 401 InvalidApiKey` etc. |
 | Camera or detector failure | 抱歉，我现在看不清周围。 | `WARNING Tool look_around failed: ...` |
+
+### Offline menu
+
+After an "offline" reply, the robot offers a short spoken menu instead of
+leaving the conversation there:
+
+```
+你：你是谁？
+巴克：我现在连不上网络。你可以说 一 检查设置，二 重试，三 退出。
+你：二
+巴克：好的，我再试一次。
+```
+
+The menu's opening line replaces the plain `offline` phrase, so the robot
+doesn't say it can't connect twice in a row. With `offline_menu.enabled: false`
+the plain phrase is spoken as before.
+
+Answer with the keyword (设置 / 重试 / 退出) or the position (一 / 1 / 第一).
+The actions are:
+
+| Action | Effect |
+|---|---|
+| `settings` | Prints provider, endpoint, whether the key is set, and the last error in the terminal. Never spoken |
+| `retry` | Asks the same question again, once. If that fails, the robot returns to idle rather than offering the menu again |
+| `quit` | Leaves the conversation and returns to idle |
+
+After `max_attempts` answers that aren't understood (2 by default), it speaks
+`closing` and returns to idle. The menu is never offered twice in a row, so it
+cannot loop.
+
+Everything about it is in the `offline_menu` section of `config.yaml`: up to
+three options, each with its own keyword and spoken reply. All of its audio is
+cached at startup along with the fallback phrases, so it can always be spoken
+with the network down.
+
+**Hearing the answer is the part that needs the network.** Speech recognition
+runs on the provider, which is exactly what is unreachable. Each attempt
+retries it, so a short outage is usually over by the time the menu has been
+spoken; if it isn't, the attempt counts as not understood and the menu closes
+after `max_attempts`. With `--text` the answer is typed, so the menu works with
+no network at all. Fully offline menu selection would need a local speech
+recognizer, which this module doesn't have.
 
 Each network call and tool call has a hard time limit, so the loop can't hang.
 Fallback phrases are turned into audio at startup and cached in
@@ -185,8 +228,9 @@ python -m pytest tests
 
 The tests cover reply parsing and cleanup, tool dispatch, the agent's turn
 logic with a scripted provider (including offline, hanging, bad-JSON and
-camera-failure cases), config validation, provider selection, ASR response
-parsing, the speech cache, and VAD segmentation. They need no network,
+camera-failure cases), the offline menu (keyword and number answers, failed
+attempts, recognition still being down), config validation, provider
+selection, ASR response parsing, the speech cache, and VAD segmentation. They need no network,
 microphone or camera. Use `--check` for those.
 
 ## Layout
@@ -196,6 +240,7 @@ microphone or camera. Use `--check` for those.
 | `voice_agent/__main__.py` | CLI, push-to-talk / VAD / text loops |
 | `voice_agent/agent.py` | One turn: ASR → LLM → parse → tool → reply; history; fallbacks |
 | `voice_agent/protocol.py` | JSON reply schema parsing, spoken-text cleanup |
+| `voice_agent/menu.py` | Offline menu: keyword/number matching and attempt limit |
 | `voice_agent/tools.py` | Tool registry and `look_around` |
 | `voice_agent/audio.py` | Microphone capture (push-to-talk, webrtcvad), WAV encoding |
 | `voice_agent/speech.py` | TTS with offline phrase cache, playback via `object_narrator` |

@@ -36,6 +36,13 @@ def test_shipped_config_loads():
     assert config.audio.vad.enabled is False
     assert config.speech_output.engine == "edge-tts"
     assert "{tools}" in config.system_prompt
+    assert [o.action for o in config.offline_menu.options] == ["settings", "retry", "quit"]
+
+
+def test_disabled_menu_skips_option_validation(tmp_path):
+    config = load_config(write_config(tmp_path, offline_menu__enabled=False,
+                                      offline_menu__options=[]))
+    assert config.offline_menu.enabled is False
 
 
 def test_narrator_path_is_relative_to_config_file(tmp_path, monkeypatch):
@@ -67,6 +74,26 @@ def test_device_name_allowed(tmp_path):
     ({"fallback_phrases__offline": " "}, "fallback_phrases.offline must not be empty"),
     ({"providers": ["dashscope"]}, "providers must be dict"),
     ({"narrator_config": "/nonexistent/config.yaml"}, "narrator_config: file not found"),
+    ({"offline_menu__max_attempts": 0}, "offline_menu.max_attempts must be >= 1"),
+    ({"offline_menu__prompt": " "}, "offline_menu.prompt must not be empty"),
+    ({"offline_menu__options": [
+        {"action": "retry", "keyword": "重试", "reply": "好"},
+        {"action": "quit", "keyword": "退出", "reply": "好"},
+        {"action": "settings", "keyword": "设置", "reply": "好"},
+        {"action": "retry", "keyword": "再试", "reply": "好"},
+    ]}, "offline_menu.options must have 1 to 3 entries"),
+    ({"offline_menu__options": []}, "offline_menu.options must have 1 to 3 entries"),
+    ({"offline_menu__options": [{"action": "dance", "keyword": "跳舞", "reply": "好"}]},
+     "options[0].action must be one of settings, retry, quit"),
+    ({"offline_menu__options": [{"action": "retry", "keyword": " ", "reply": "好"}]},
+     "options[0].keyword must not be empty"),
+    ({"offline_menu__options": [{"action": "retry", "keyword": "重试"}]},
+     "Missing required key: offline_menu.options[0].reply"),
+    ({"offline_menu__options": [
+        {"action": "retry", "keyword": "重试", "reply": "好"},
+        {"action": "quit", "keyword": "重试", "reply": "好"},
+    ]}, "keyword '重试' is used twice"),
+    ({"offline_menu__options": "重试"}, "offline_menu.options must be a list"),
 ])
 def test_invalid_config_reports_clear_error(tmp_path, overrides, message):
     with pytest.raises(ConfigError) as excinfo:

@@ -9,7 +9,7 @@ import types
 import typing
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Union
+from typing import List, Union
 
 import yaml
 
@@ -56,6 +56,28 @@ class ConversationConfig:
 
 
 @dataclass
+class MenuOption:
+    action: str      # settings | retry | quit
+    keyword: str     # spoken word that selects it, e.g. 重试
+    reply: str       # spoken when it is selected
+
+
+@dataclass
+class OfflineMenuConfig:
+    """Spoken menu offered when the provider is unreachable."""
+
+    enabled: bool = True
+    prompt: str = "我现在连不上网络。你可以说 一 检查设置，二 重试，三 退出。"
+    closing: str = "我先休息一下，需要的时候再叫我。"
+    max_attempts: int = 2
+    options: List[MenuOption] = field(default_factory=lambda: [
+        MenuOption("settings", "设置", "好的，我把设置情况显示在屏幕上了。"),
+        MenuOption("retry", "重试", "好的，我再试一次。"),
+        MenuOption("quit", "退出", "好的，我先休息一下。"),
+    ])
+
+
+@dataclass
 class FallbackPhrases:
     not_heard: str = "我没听清，可以再说一遍吗？"
     offline: str = "我现在连不上网络，请稍后再试。"
@@ -73,6 +95,7 @@ class Config:
     conversation: ConversationConfig = field(default_factory=ConversationConfig)
     providers: dict = field(default_factory=dict)
     fallback_phrases: FallbackPhrases = field(default_factory=FallbackPhrases)
+    offline_menu: OfflineMenuConfig = field(default_factory=OfflineMenuConfig)
 
     # Filled in by load_config, not read from YAML.
     narrator: object = field(default=None, repr=False)
@@ -80,6 +103,8 @@ class Config:
 
 SPEECH_ENGINES = ("edge-tts", "provider")
 VAD_SAMPLE_RATES = (8000, 16000, 32000, 48000)
+MENU_ACTIONS = ("settings", "retry", "quit")
+MAX_MENU_OPTIONS = 3  # a spoken menu longer than this is hard to remember
 
 
 def load_config(path):
@@ -139,6 +164,30 @@ def validate(config):
         _require(isinstance(settings, dict) or settings is None,
                  f"providers.{name} must be a mapping")
 
+    _validate_menu(config.offline_menu)
+
+
+def _validate_menu(menu):
+    if not menu.enabled:
+        return
+    _require(menu.prompt.strip() != "", "offline_menu.prompt must not be empty")
+    _require(menu.closing.strip() != "", "offline_menu.closing must not be empty")
+    _require(menu.max_attempts >= 1, "offline_menu.max_attempts must be >= 1")
+    _require(1 <= len(menu.options) <= MAX_MENU_OPTIONS,
+             f"offline_menu.options must have 1 to {MAX_MENU_OPTIONS} entries, "
+             f"got {len(menu.options)}")
+
+    keywords = set()
+    for i, option in enumerate(menu.options):
+        where = f"offline_menu.options[{i}]"
+        _require(option.action in MENU_ACTIONS,
+                 f"{where}.action must be one of {', '.join(MENU_ACTIONS)}, got {option.action!r}")
+        _require(option.keyword.strip() != "", f"{where}.keyword must not be empty")
+        _require(option.reply.strip() != "", f"{where}.reply must not be empty")
+        keyword = option.keyword.strip()
+        _require(keyword not in keywords, f"{where}.keyword {keyword!r} is used twice")
+        keywords.add(keyword)
+
 
 def _load_narrator(base_dir, narrator_path):
     from object_narrator.config import load_config as load_narrator_config
@@ -185,9 +234,23 @@ def _build(cls, raw, prefix):
         value = raw[name]
         if dataclasses.is_dataclass(expected):
             values[name] = _build(expected, value if value is not None else {}, key + ".")
+        elif _dataclass_list_item(expected):
+            item_type = _dataclass_list_item(expected)
+            if not isinstance(value, list):
+                raise ConfigError(f"{key} must be a list")
+            values[name] = [_build(item_type, item, f"{key}[{i}].")
+                            for i, item in enumerate(value)]
         else:
             values[name] = _check_type(value, expected, key)
     return cls(**values)
+
+
+def _dataclass_list_item(expected):
+    """For list[SomeDataclass], return SomeDataclass; otherwise None."""
+    if typing.get_origin(expected) is not list:
+        return None
+    args = typing.get_args(expected)
+    return args[0] if args and dataclasses.is_dataclass(args[0]) else None
 
 
 def _check_type(value, expected, key):

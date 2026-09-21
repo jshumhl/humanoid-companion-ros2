@@ -34,6 +34,7 @@ class Agent:
         self._language = config.narrator.language
         self._system_prompt = config.system_prompt.replace("{tools}", tools.catalog())
         self._history = []
+        self.last_error = ""  # most recent failure, for --check and the offline menu
 
     @property
     def history(self):
@@ -42,20 +43,24 @@ class Agent:
     def reset(self):
         self._history.clear()
 
+    def transcribe(self, wav_bytes, sample_rate):
+        """Speech to text. Raises ProviderUnavailable/CallTimeout when offline."""
+        heard = call_with_timeout(
+            self._provider.transcribe, self._timeouts.asr_sec,
+            wav_bytes, sample_rate, self._language, self._timeouts.asr_sec,
+        )
+        return (heard or "").strip()
+
     def respond_to_audio(self, wav_bytes, sample_rate):
         try:
-            heard = call_with_timeout(
-                self._provider.transcribe, self._timeouts.asr_sec,
-                wav_bytes, sample_rate, self._language, self._timeouts.asr_sec,
-            )
+            heard = self.transcribe(wav_bytes, sample_rate)
         except (ProviderUnavailable, CallTimeout) as e:
-            log.warning("ASR unavailable: %s", e)
+            self._note_error("ASR unavailable", e)
             return self.fallback("offline")
         except Exception as e:
-            log.warning("ASR failed: %s", e)
+            self._note_error("ASR failed", e)
             return self.fallback("not_heard")
 
-        heard = (heard or "").strip()
         if not heard:
             return self.fallback("not_heard")
         reply = self.respond_to_text(heard)
@@ -73,10 +78,10 @@ class Agent:
             raw = call_with_timeout(self._provider.chat, self._timeouts.llm_sec,
                                     messages, self._timeouts.llm_sec)
         except (ProviderUnavailable, CallTimeout) as e:
-            log.warning("LLM unavailable: %s", e)
+            self._note_error("LLM unavailable", e)
             return self.fallback("offline")
         except Exception as e:
-            log.warning("LLM failed: %s", e)
+            self._note_error("LLM failed", e)
             return self.fallback("error")
 
         log.debug("model output: %s", raw)
@@ -123,6 +128,10 @@ class Agent:
         max_messages = 2 * self._config.conversation.max_history_turns
         if len(self._history) > max_messages:
             del self._history[:len(self._history) - max_messages]
+
+    def _note_error(self, what, error):
+        self.last_error = f"{what}: {error}"
+        log.warning("%s: %s", what, error)
 
     def fallback(self, key):
         """Reply with a fixed phrase: not_heard, offline, error or tool_failed."""

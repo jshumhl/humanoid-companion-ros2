@@ -2,10 +2,12 @@
 
 import argparse
 import logging
+import os
 import sys
 import time
 from pathlib import Path
 
+from .agent import Reply
 from .config import ConfigError, load_config
 
 log = logging.getLogger("voice_agent")
@@ -84,12 +86,15 @@ def main(argv=None):
         except RuntimeError as e:
             print(f"Audio output error: {e}", file=sys.stderr)
             return 2
+        # Cached now, while the network is up, so they can be spoken when it is not.
+        from .menu import menu_phrases
         phrases = config.fallback_phrases
-        speech.prepare([phrases.not_heard, phrases.offline, phrases.error, phrases.tool_failed])
+        speech.prepare([phrases.not_heard, phrases.offline, phrases.error, phrases.tool_failed,
+                        *menu_phrases(config.offline_menu)])
 
     try:
         if args.text:
-            text_loop(agent, speech)
+            text_loop(agent, speech, config)
         else:
             voice_loop(agent, speech, config)
     except (KeyboardInterrupt, EOFError):
@@ -113,9 +118,13 @@ def make_speech_output(config, provider):
     )
 
 
-def deliver(reply, speech):
+def deliver(reply, speech, say_reply=True):
+    """Show and speak a reply. With say_reply=False only the transcript is shown,
+    which is used when the offline menu is about to say the same thing."""
     if reply.heard:
         print(f"你：{reply.heard}")
+    if not say_reply:
+        return
     tags = [f"tool={reply.tool}"] if reply.tool else []
     tags += [f"fallback={reply.fallback}"] if reply.fallback else []
     print(f"巴克：{reply.text}" + (f"   [{', '.join(tags)}]" if tags else ""), flush=True)
@@ -123,14 +132,61 @@ def deliver(reply, speech):
         speech.say(reply.text)
 
 
-def text_loop(agent, speech):
+def menu_follows(reply, config):
+    """True when the offline menu will be offered for this reply."""
+    return reply.fallback == "offline" and config.offline_menu.enabled
+
+
+def offer_offline_menu(agent, speech, config, listen, retry_text=None):
+    """Offer the offline menu after an "offline" reply. Returns the action taken."""
+    from .menu import IDLE, OfflineMenu
+
+    menu = config.offline_menu
+    if not menu.enabled:
+        return IDLE
+
+    action = OfflineMenu(menu, lambda text: deliver(Reply(text), speech), listen).run()
+    if action == "settings":
+        print_settings(agent, config)
+    elif action == "retry" and retry_text:
+        # One retry only: a failing retry returns to idle instead of
+        # offering the menu again, so the robot cannot loop.
+        deliver(agent.respond_to_text(retry_text), speech)
+    return action
+
+
+def print_settings(agent, config):
+    """Operator-facing diagnostics. Never spoken."""
+    from .providers import selected_provider_name
+
+    print("  provider:            ", selected_provider_name())
+    print("  DASHSCOPE_BASE_URL:  ", os.environ.get("DASHSCOPE_BASE_URL", "(default)"))
+    print("  DASHSCOPE_API_KEY:   ", "set" if os.environ.get("DASHSCOPE_API_KEY") else "NOT SET")
+    print("  config:              ", config.narrator_config)
+    print("  last error:          ", agent.last_error or "(none)")
+    print("  Try: python -m voice_agent --check llm", flush=True)
+
+
+def text_loop(agent, speech, config):
     print("Text mode. Type a message, or q to quit.")
     while True:
         line = input("\n你：").strip()
         if line.lower() in ("q", "quit", "exit"):
             return
-        if line:
-            deliver(agent.respond_to_text(line), speech)
+        if not line:
+            continue
+        reply = agent.respond_to_text(line)
+        # The menu opens with its own "cannot connect" line, so the plain
+        # offline phrase would just repeat it.
+        deliver(reply, speech, say_reply=not menu_follows(reply, config))
+        if reply.fallback == "offline":
+            action = offer_offline_menu(
+                agent, speech, config,
+                listen=lambda: input("\n你：").strip(),
+                retry_text=line,
+            )
+            if action == "quit":
+                return
 
 
 def voice_loop(agent, speech, config):
@@ -169,7 +225,35 @@ def voice_loop(agent, speech, config):
         if len(pcm) < audio.min_record_sec * audio.sample_rate:
             deliver(agent.fallback("not_heard"), speech)
             continue
-        deliver(agent.respond_to_audio(to_wav_bytes(pcm, audio.sample_rate), audio.sample_rate), speech)
+
+        reply = agent.respond_to_audio(to_wav_bytes(pcm, audio.sample_rate), audio.sample_rate)
+        deliver(reply, speech, say_reply=not menu_follows(reply, config))
+        if reply.fallback == "offline":
+            action = offer_offline_menu(
+                agent, speech, config,
+                listen=lambda: listen_once(agent, recorder, audio),
+                retry_text=reply.heard,
+            )
+            if action == "quit":
+                return
+
+
+def listen_once(agent, recorder, audio):
+    """Record an answer to the menu and transcribe it. "" when not understood.
+
+    Speech recognition is the service that just failed, so this retries it:
+    brief outages are usually over by the time the menu has been spoken.
+    """
+    from .audio import to_wav_bytes
+
+    if not audio.vad.enabled:
+        print("[Enter] to answer: ", end="", flush=True)
+        input()
+        print("Recording... press Enter to stop.", flush=True)
+    pcm = recorder.record()
+    if len(pcm) < audio.min_record_sec * audio.sample_rate:
+        return ""
+    return agent.transcribe(to_wav_bytes(pcm, audio.sample_rate), audio.sample_rate)
 
 
 if __name__ == "__main__":

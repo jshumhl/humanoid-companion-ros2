@@ -77,3 +77,32 @@ fallback_phrases:
   offline: 我现在连不上网络，请稍后再试。
   error: 抱歉，我刚才走神了，请再说一遍。
   tool_failed: 抱歉，我现在看不清周围。
+
+# Spoken menu offered after an "offline" reply. Answer with the keyword (重试)
+# or the position (二 / 2 / 第二). All of its audio is cached at startup.
+#
+# Note: hearing a spoken answer still needs speech recognition, which is the
+# service that just failed. Each attempt retries it, so a short outage
+# recovers; if it does not, the attempt counts as not understood. In --text
+# mode the answer is typed and the menu works with no network at all.
+offline_menu:
+  enabled: true
+  prompt: 我现在连不上网络。你可以说 一 检查设置，二 重试，三 退出。
+  # After this many answers that were not understood, the robot speaks
+  # `closing` and returns to idle. It never asks again in a loop.
+  max_attempts: 2
+  closing: 我先休息一下，需要的时候再叫我。
+  # One to three options. action: settings | retry | quit
+  #   settings - print provider, endpoint and last error in the terminal
+  #   retry    - ask the same question again, once
+  #   quit     - leave the conversation and return to idle
+  options:
+    - action: settings
+      keyword: 设置
+      reply: 好的，我把设置情况显示在屏幕上了。
+    - action: retry
+      keyword: 重试
+      reply: 好的，我再试一次。
+    - action: quit
+      keyword: 退出
+      reply: 好的，我先休息一下。
