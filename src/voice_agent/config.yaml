@@ -24,6 +24,15 @@ audio:
     silence_ms: 800        # this much silence ends an utterance
     start_timeout_sec: 10  # stop waiting if nobody speaks
 
+# Offline recognizer for offline-menu answers only. Cloud speech recognition
+# is unusable exactly when the menu is needed, so menu answers are recognized
+# on this machine with Vosk, using a grammar built from the menu keywords.
+# Download the model as described in SETUP.md. Without it the menu still
+# speaks and still accepts typed answers.
+local_asr:
+  enabled: true
+  model_path: ~/.cache/voice_agent/vosk-model-small-cn-0.22
+
 speech_output:
   # edge-tts: object_narrator's Speaker (voice set in the narrator config).
   # provider: the provider's own TTS, falling back to edge-tts if it fails.

@@ -13,6 +13,7 @@ dependencies = [
     "numpy",
     "requests",
     "sounddevice",
+    "vosk",
 ]
 
 [project.optional-dependencies]

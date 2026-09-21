@@ -119,6 +119,40 @@ def check_asr(config):
     return bool(text)
 
 
+def check_local_asr(config):
+    """The offline menu recognizer: no network is used by this check."""
+    import sounddevice as sd
+
+    from .local_asr import VoskMenuRecognizer
+    from .menu import match_choice
+
+    local = config.local_asr
+    if not local.enabled:
+        print("local_asr.enabled is false: offline menu answers must be typed.")
+        return False
+
+    recognizer = VoskMenuRecognizer(local.model_path, config.offline_menu.options,
+                                    config.audio.sample_rate)
+    print(f"Model: {local.model_path}")
+    print(f"Grammar: {'  '.join(recognizer.grammar)}")
+
+    keywords = "、".join(o.keyword for o in config.offline_menu.options)
+    print(f"Recording {ASR_SECONDS} s. Say one of: {keywords} (or 一/二/三)...")
+    pcm = sd.rec(ASR_SECONDS * config.audio.sample_rate, samplerate=config.audio.sample_rate,
+                 channels=1, dtype="int16", device=config.audio.input_device)
+    sd.wait()
+
+    started = time.monotonic()
+    text = recognizer.recognize(pcm[:, 0])
+    choice = match_choice(text, config.offline_menu.options)
+    print(f"Heard: {text!r} ({time.monotonic() - started:.1f} s)")
+    if choice is None:
+        print("That did not match any option. Speak one word clearly, close to the microphone.")
+        return False
+    print(f"Selected: {config.offline_menu.options[choice].action}")
+    return True
+
+
 def _ask(question):
     answer = input(f"{question} [y/n] ").strip().lower()
     return answer in ("y", "yes", "是", "")
@@ -130,4 +164,5 @@ CHECK_FUNCTIONS = {
     "camera": check_camera,
     "llm": check_llm,
     "asr": check_asr,
+    "local-asr": check_local_asr,
 }

@@ -36,6 +36,14 @@ class AudioConfig:
 
 
 @dataclass
+class LocalAsrConfig:
+    """Offline recognizer used only for offline-menu answers."""
+
+    enabled: bool = True
+    model_path: str = "~/.cache/voice_agent/vosk-model-small-cn-0.22"
+
+
+@dataclass
 class SpeechOutputConfig:
     engine: str = "edge-tts"         # edge-tts | provider
     cache_dir: str = "~/.cache/voice_agent/tts"
@@ -90,6 +98,7 @@ class Config:
     system_prompt: str
     narrator_config: str = "../object_narrator/config.yaml"
     audio: AudioConfig = field(default_factory=AudioConfig)
+    local_asr: LocalAsrConfig = field(default_factory=LocalAsrConfig)
     speech_output: SpeechOutputConfig = field(default_factory=SpeechOutputConfig)
     timeouts: TimeoutConfig = field(default_factory=TimeoutConfig)
     conversation: ConversationConfig = field(default_factory=ConversationConfig)
@@ -104,6 +113,7 @@ class Config:
 SPEECH_ENGINES = ("edge-tts", "provider")
 VAD_SAMPLE_RATES = (8000, 16000, 32000, 48000)
 MENU_ACTIONS = ("settings", "retry", "quit")
+LOCAL_ASR_SAMPLE_RATE = 16000
 MAX_MENU_OPTIONS = 3  # a spoken menu longer than this is hard to remember
 
 
@@ -141,6 +151,13 @@ def validate(config):
     if vad.enabled:
         _require(audio.sample_rate in VAD_SAMPLE_RATES,
                  f"audio.sample_rate must be one of {VAD_SAMPLE_RATES} when audio.vad.enabled is true")
+
+    if config.local_asr.enabled:
+        _require(config.local_asr.model_path.strip() != "",
+                 "local_asr.model_path must not be empty when local_asr.enabled is true")
+        _require(audio.sample_rate == LOCAL_ASR_SAMPLE_RATE,
+                 f"audio.sample_rate must be {LOCAL_ASR_SAMPLE_RATE} when local_asr.enabled is "
+                 f"true (the Vosk model expects it), got {audio.sample_rate}")
 
     _require(config.speech_output.engine in SPEECH_ENGINES,
              f"speech_output.engine must be one of {', '.join(SPEECH_ENGINES)}, "

@@ -39,6 +39,12 @@ def test_shipped_config_loads():
     assert [o.action for o in config.offline_menu.options] == ["settings", "retry", "quit"]
 
 
+def test_other_sample_rates_allowed_without_the_local_recognizer(tmp_path):
+    config = load_config(write_config(tmp_path, local_asr__enabled=False,
+                                      audio__sample_rate=48000))
+    assert config.audio.sample_rate == 48000
+
+
 def test_disabled_menu_skips_option_validation(tmp_path):
     config = load_config(write_config(tmp_path, offline_menu__enabled=False,
                                       offline_menu__options=[]))
@@ -74,6 +80,8 @@ def test_device_name_allowed(tmp_path):
     ({"fallback_phrases__offline": " "}, "fallback_phrases.offline must not be empty"),
     ({"providers": ["dashscope"]}, "providers must be dict"),
     ({"narrator_config": "/nonexistent/config.yaml"}, "narrator_config: file not found"),
+    ({"local_asr__model_path": " "}, "local_asr.model_path must not be empty"),
+    ({"audio__sample_rate": 48000}, "audio.sample_rate must be 16000 when local_asr.enabled"),
     ({"offline_menu__max_attempts": 0}, "offline_menu.max_attempts must be >= 1"),
     ({"offline_menu__prompt": " "}, "offline_menu.prompt must not be empty"),
     ({"offline_menu__options": [

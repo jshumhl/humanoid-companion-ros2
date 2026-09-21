@@ -112,7 +112,32 @@ Pick the base URL that matches where your key was created:
 You can also `export` these variables in your shell instead of using `.env`.
 Variables already set in the shell take priority over `.env`.
 
-## 4. Choose audio devices
+## 4. Offline menu recognizer (Vosk model)
+
+When the network drops, the robot offers a spoken menu (一 检查设置, 二 重试,
+三 退出). Cloud speech recognition is down at exactly that moment, so menu
+answers are recognized **on this machine** with a small Vosk model. Download it
+once:
+
+```bash
+mkdir -p ~/.cache/voice_agent
+cd ~/.cache/voice_agent
+wget https://alphacephei.com/vosk/models/vosk-model-small-cn-0.22.zip
+unzip vosk-model-small-cn-0.22.zip && rm vosk-model-small-cn-0.22.zip
+cd -
+```
+
+That leaves `~/.cache/voice_agent/vosk-model-small-cn-0.22`, about 65 MB on
+disk, which matches `local_asr.model_path` in
+[src/voice_agent/config.yaml](src/voice_agent/config.yaml). Put it elsewhere if
+you prefer and change that setting to match. The `vosk` Python package is
+already installed from step 2.
+
+This model is used *only* for menu answers, never for conversation. If you skip
+this step the agent still runs and the menu is still spoken; menu answers then
+have to be typed (1, 2 or 3), and a warning is printed at startup.
+
+## 5. Choose audio devices
 
 ### Microphone
 
@@ -180,12 +205,12 @@ language: zh-CN
 confidence: 0.5
 ```
 
-## 5. Verify each component
+## 6. Verify each component
 
 Do these in order. Each step tests one thing, so a failure points to a single
 cause. Every `--check` prints PASS or FAIL.
 
-### 5.1 Speaker
+### 6.1 Speaker
 
 ```bash
 speaker-test -t wav -c 2 -l 1        # you should hear "Front Left", "Front Right"
@@ -201,7 +226,7 @@ whether you heard it.
   install `mpg123`.
 - **The check fails with a connection error:** edge-tts needs internet access.
 
-### 5.2 Microphone
+### 6.2 Microphone
 
 ```bash
 arecord -f S16_LE -r 16000 -c 1 -d 3 /tmp/mic.wav && aplay /tmp/mic.wav
@@ -217,7 +242,7 @@ and asks whether you heard yourself.
 - **`Error querying device`:** the `input_device` index no longer exists.
   Indexes change when USB devices are plugged in, so run `--list-devices` again.
 
-### 5.3 Camera
+### 6.3 Camera
 
 ```bash
 ffplay -f v4l2 /dev/video0           # a window with live video; press q to close
@@ -232,7 +257,7 @@ The check captures one frame and prints a sentence such as
   program, or you are not in the `video` group (log out and back in after step 1).
 - **Always 我没有看到任何东西。:** point the camera at a person, or lower `confidence`.
 
-### 5.4 Language model
+### 6.4 Language model
 
 ```bash
 python -m voice_agent --check llm
@@ -257,14 +282,39 @@ This check doesn't use the camera. It only confirms that the model chose the
 | `403 AccessDenied.Unpurchased` | The model isn't enabled for this workspace; enable it in the Model Studio console |
 | `unreachable ... NameResolutionError` | No internet, or a typo in `DASHSCOPE_BASE_URL` |
 
-### 5.5 Speech recognition
+### 6.5 Speech recognition
 
 ```bash
 python -m voice_agent --check asr
 ```
 
 Say 你看见什么？ during the 4-second recording. It should print a transcript
-such as `'你看见什么。'`. If the transcript is empty, fix the microphone first (5.2).
+such as `'你看见什么。'`. If the transcript is empty, fix the microphone first (6.2).
+
+### 6.6 Offline menu recognizer
+
+```bash
+python -m voice_agent --check local-asr
+```
+
+This uses no network. It loads the Vosk model from step 4, prints the grammar
+built from your menu options, records for 4 seconds and shows which option your
+answer selected:
+
+```
+Model: ~/.cache/voice_agent/vosk-model-small-cn-0.22
+Grammar: 设置  设 置  一  重试  重 试  二  两  退出  退 出  三  [unk]
+Recording 4 s. Say one of: 设置、重试、退出 (or 一/二/三)...
+Heard: '重 试'
+Selected: retry
+```
+
+- **`Vosk model not found`:** the path in `local_asr.model_path` doesn't match
+  where you unzipped the model in step 4.
+- **`Heard: '[unk]'`:** speak one word clearly, close to the microphone. Extra
+  words around the keyword are fine; background chatter is not.
+- **You can skip this** if you are happy to type 1/2/3 when offline. Set
+  `local_asr.enabled: false` to stop the startup warning.
 
 ### All at once
 
@@ -274,7 +324,7 @@ After each part passes on its own, this command reruns every check and prints a 
 python -m voice_agent --check all
 ```
 
-## 6. Run the agent
+## 7. Run the agent
 
 ```bash
 source .venv/bin/activate
@@ -301,6 +351,8 @@ Add `-v` to any command to see the raw model output and debug logs.
 
 | Symptom | Fix |
 |---|---|
+| Robot offers the menu but can't hear the answer | Run `--check local-asr`. Type 1, 2 or 3 in the meantime |
+| Warning at startup: `Vosk model not found` | Do step 4, or set `local_asr.enabled: false` |
 | Robot always says 我现在连不上网络 | Check internet access and `DASHSCOPE_BASE_URL`, then run `--check llm` to see the real error |
 | Robot always says 我没听清 | Run `--check mic` and `--check asr`. Hold Enter-to-Enter for at least half a second |
 | Robot says 抱歉，我刚才走神了 | Run with `-v`. Usually an API error (401/403) or a malformed model reply |

@@ -14,14 +14,14 @@ class FakeRecorder:
         return self.pcm
 
 
-class FakeAgent:
-    def __init__(self, transcript="重试"):
-        self.transcript = transcript
-        self.wavs = []
+class FakeLocalRecognizer:
+    def __init__(self, text="重 试"):
+        self.text = text
+        self.heard = []
 
-    def transcribe(self, wav_bytes, sample_rate):
-        self.wavs.append(wav_bytes)
-        return self.transcript
+    def recognize(self, pcm):
+        self.heard.append(len(pcm))
+        return self.text
 
 
 class FakeSpeech:
@@ -32,23 +32,42 @@ class FakeSpeech:
         self.spoken.append(text)
 
 
-def test_listen_once_records_and_transcribes(config, monkeypatch):
+def test_listen_once_uses_the_local_recognizer(config, monkeypatch):
     """Regression: this path once raised NameError instead of returning the answer."""
     monkeypatch.setattr("builtins.input", lambda *a: "")
-    agent = FakeAgent("重试")
+    local = FakeLocalRecognizer("重 试")
 
-    answer = listen_once(agent, FakeRecorder(2.0), config.audio)
+    answer = listen_once(FakeRecorder(2.0), config.audio, local)
 
-    assert answer == "重试"
-    assert agent.wavs[0].startswith(b"RIFF")  # a real WAV was built
+    assert answer == "重 试"
+    assert local.heard == [2 * 16000]
 
 
 def test_listen_once_ignores_too_short_recording(config, monkeypatch):
     monkeypatch.setattr("builtins.input", lambda *a: "")
-    agent = FakeAgent("重试")
+    local = FakeLocalRecognizer()
 
-    assert listen_once(agent, FakeRecorder(0.05), config.audio) == ""
-    assert agent.wavs == []  # nothing sent to speech recognition
+    assert listen_once(FakeRecorder(0.05), config.audio, local) == ""
+    assert local.heard == []
+
+
+def test_typed_answer_is_used_without_recording(config, monkeypatch):
+    monkeypatch.setattr("builtins.input", lambda *a: " 2 ")
+    local = FakeLocalRecognizer()
+
+    assert listen_once(FakeRecorder(2.0), config.audio, local) == "2"
+    assert local.heard == []  # nothing was recorded
+
+
+def test_typing_still_works_without_a_local_recognizer(config, monkeypatch):
+    monkeypatch.setattr("builtins.input", lambda *a: "3")
+    assert listen_once(FakeRecorder(2.0), config.audio, None) == "3"
+
+
+def test_without_local_recognizer_nothing_is_recorded(config, monkeypatch, capsys):
+    monkeypatch.setattr("builtins.input", lambda *a: "")
+    assert listen_once(FakeRecorder(2.0), config.audio, None) == ""
+    assert "type 1, 2 or 3" in capsys.readouterr().out
 
 
 def test_offline_reply_is_not_spoken_when_menu_follows(config, capsys):

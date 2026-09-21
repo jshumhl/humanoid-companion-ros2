@@ -57,7 +57,7 @@ Other ways to run it:
 ```bash
 python -m voice_agent --text             # type instead of talking (no microphone needed)
 python -m voice_agent --text --no-audio  # no microphone, no speaker: pure debugging
-python -m voice_agent --check all        # test speaker, mic, camera, LLM and ASR one by one
+python -m voice_agent --check all        # test speaker, mic, camera, LLM, ASR, offline recognizer
 python -m voice_agent --check llm        # just one component
 python -m voice_agent --list-devices     # audio device indexes for config.yaml
 python -m voice_agent -v                 # debug log, including raw model output
@@ -85,6 +85,7 @@ option. The main ones:
 | `narrator_config` | `../object_narrator/config.yaml` | Shared camera `source`, `language`, edge-tts `voice` and `player` |
 | `audio.input_device` | `null` | Microphone index or name (`--list-devices`) |
 | `audio.vad.enabled` | `false` | Voice activity detection instead of push-to-talk (`pip install webrtcvad-wheels`) |
+| `local_asr.model_path` | `~/.cache/voice_agent/vosk-model-small-cn-0.22` | Offline recognizer for menu answers (SETUP.md step 4) |
 | `speech_output.engine` | `edge-tts` | `provider` tries the provider's TTS first, then falls back to edge-tts |
 | `timeouts.*_sec` | 15–20 | Longest wait for ASR, LLM, TTS or a tool before using a fallback phrase |
 | `conversation.max_history_turns` | `10` | Past exchanges sent with each request |
@@ -143,13 +144,47 @@ three options, each with its own keyword and spoken reply. All of its audio is
 cached at startup along with the fallback phrases, so it can always be spoken
 with the network down.
 
-**Hearing the answer is the part that needs the network.** Speech recognition
-runs on the provider, which is exactly what is unreachable. Each attempt
-retries it, so a short outage is usually over by the time the menu has been
-spoken; if it isn't, the attempt counts as not understood and the menu closes
-after `max_attempts`. With `--text` the answer is typed, so the menu works with
-no network at all. Fully offline menu selection would need a local speech
-recognizer, which this module doesn't have.
+#### Hearing the answer offline
+
+Cloud speech recognition is down exactly when the menu is needed, so menu
+answers are recognized **on this machine** with Vosk and a small Chinese model.
+Cloud recognition is never attempted here: it would only wait for a timeout.
+
+The grammar is built from the configured options, so the recognizer only
+chooses between a few phrases plus `[unk]`:
+
+```
+设置  设 置  一  重试  重 试  二  两  退出  退 出  三  [unk]
+```
+
+Two details of the model shape it:
+
+- Some words are missing from its vocabulary, 重试 among them, and are silently
+  dropped from the grammar. Each keyword is therefore also offered split into
+  characters (`重 试`), which the model does recognize.
+- Unrelated speech comes back as `[unk]`, sometimes with a stray word attached,
+  e.g. 今天天气怎么样 → `[unk] 一`. A keyword next to `[unk]` still counts as a
+  choice, but a bare position does not, since one syllable next to
+  unrecognized speech is too easily a mishearing.
+
+Measured with recorded speech and no network:
+
+| Said | Heard | Result |
+|---|---|---|
+| 设置 | `设置` | settings |
+| 重试 | `重 试` | retry |
+| 三 | `三` | quit |
+| 我想重试一次 | `[unk] 两 重 试 一 置` | retry |
+| 今天天气怎么样 | `[unk] 一` | not understood |
+
+**Typing 1/2/3 always works** and is the fallback when the model is missing.
+The menu prompt is `[Enter] to answer, or type 1/2/3:`; typing answers
+directly, and pressing Enter alone records instead. If the model isn't
+installed, the agent says so at startup rather than during an outage, and
+`--text` mode needs no recognizer at all.
+
+Set it up with SETUP.md step 4, and verify it with `--check local-asr`.
+`local_asr.enabled: false` turns it off and silences the startup warning.
 
 Each network call and tool call has a hard time limit, so the loop can't hang.
 Fallback phrases are turned into audio at startup and cached in
@@ -229,8 +264,10 @@ python -m pytest tests
 The tests cover reply parsing and cleanup, tool dispatch, the agent's turn
 logic with a scripted provider (including offline, hanging, bad-JSON and
 camera-failure cases), the offline menu (keyword and number answers, failed
-attempts, recognition still being down), config validation, provider
-selection, ASR response parsing, the speech cache, and VAD segmentation. They need no network,
+attempts, `[unk]` handling), the Vosk grammar built from the options, config
+validation, provider selection, ASR response parsing, the speech cache, and
+VAD segmentation. No model file is needed: the recognizer itself is covered by
+`--check local-asr`. They need no network,
 microphone or camera. Use `--check` for those.
 
 ## Layout
@@ -241,6 +278,7 @@ microphone or camera. Use `--check` for those.
 | `voice_agent/agent.py` | One turn: ASR → LLM → parse → tool → reply; history; fallbacks |
 | `voice_agent/protocol.py` | JSON reply schema parsing, spoken-text cleanup |
 | `voice_agent/menu.py` | Offline menu: keyword/number matching and attempt limit |
+| `voice_agent/local_asr.py` | Offline recognition of menu answers (Vosk, grammar from the options) |
 | `voice_agent/tools.py` | Tool registry and `look_around` |
 | `voice_agent/audio.py` | Microphone capture (push-to-talk, webrtcvad), WAV encoding |
 | `voice_agent/speech.py` | TTS with offline phrase cache, playback via `object_narrator` |

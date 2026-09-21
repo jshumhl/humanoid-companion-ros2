@@ -2,6 +2,7 @@ pyyaml
 numpy
 requests
 sounddevice
+vosk            # offline recognizer for the offline menu; model downloaded separately
 # object_narrator (camera, detection, edge-tts speaker) is installed from this repo:
 #   pip install -e src/object_narrator
 # Optional, for audio.vad.enabled: true

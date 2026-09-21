@@ -12,7 +12,7 @@ from .config import ConfigError, load_config
 
 log = logging.getLogger("voice_agent")
 
-CHECKS = ("speaker", "mic", "camera", "llm", "asr")
+CHECKS = ("speaker", "mic", "camera", "llm", "asr", "local-asr")
 DEFAULT_CONFIG = Path(__file__).resolve().parent.parent / "config.yaml"
 
 
@@ -96,6 +96,7 @@ def main(argv=None):
         if args.text:
             text_loop(agent, speech, config)
         else:
+            warn_if_local_recognizer_missing(config)
             voice_loop(agent, speech, config)
     except (KeyboardInterrupt, EOFError):
         print()
@@ -130,6 +131,37 @@ def deliver(reply, speech, say_reply=True):
     print(f"巴克：{reply.text}" + (f"   [{', '.join(tags)}]" if tags else ""), flush=True)
     if speech:
         speech.say(reply.text)
+
+
+def lazy_local_recognizer(config):
+    """Return a callable that loads the Vosk model on first use, then reuses it.
+
+    Loading takes a moment and most sessions never go offline, so it is not
+    done at startup. The model path is checked at startup instead, by
+    warn_if_local_recognizer_missing().
+    """
+    from .local_asr import load_menu_recognizer
+
+    holder = {}
+
+    def get():
+        if "recognizer" not in holder:
+            holder["recognizer"] = load_menu_recognizer(
+                config.local_asr, config.offline_menu.options, config.audio.sample_rate)
+        return holder["recognizer"]
+
+    return get
+
+
+def warn_if_local_recognizer_missing(config):
+    """Say at startup, not mid-outage, that offline menu answers cannot be heard."""
+    local = config.local_asr
+    if not local.enabled or not config.offline_menu.enabled:
+        return
+    if not Path(local.model_path).expanduser().is_dir():
+        print(f"Warning: Vosk model not found at {local.model_path}. The offline menu will "
+              f"accept typed answers only. See SETUP.md, 'Offline menu recognizer'.",
+              file=sys.stderr)
 
 
 def menu_follows(reply, config):
@@ -199,6 +231,8 @@ def voice_loop(agent, speech, config):
         print(f"Audio input error: {e}", file=sys.stderr)
         return
 
+    local_recognizer = lazy_local_recognizer(config)
+
     if audio.vad.enabled:
         print("Listening. Speak any time; Ctrl+C to quit.")
     else:
@@ -231,29 +265,32 @@ def voice_loop(agent, speech, config):
         if reply.fallback == "offline":
             action = offer_offline_menu(
                 agent, speech, config,
-                listen=lambda: listen_once(agent, recorder, audio),
+                listen=lambda: listen_once(recorder, audio, local_recognizer()),
                 retry_text=reply.heard,
             )
             if action == "quit":
                 return
 
 
-def listen_once(agent, recorder, audio):
-    """Record an answer to the menu and transcribe it. "" when not understood.
+def listen_once(recorder, audio, local_recognizer):
+    """Get one menu answer: typed, or spoken and recognized on this machine.
 
-    Speech recognition is the service that just failed, so this retries it:
-    brief outages are usually over by the time the menu has been spoken.
+    The menu only runs when the provider is unreachable, so cloud recognition
+    is never attempted here: it would just wait for a timeout. Typing 1/2/3
+    always works, and is the fallback when the local recognizer is missing.
     """
-    from .audio import to_wav_bytes
+    typed = input("[Enter] to answer, or type 1/2/3: ").strip()
+    if typed:
+        return typed
+    if local_recognizer is None:
+        print("No offline recognizer, so type 1, 2 or 3 (see SETUP.md).", flush=True)
+        return ""
 
-    if not audio.vad.enabled:
-        print("[Enter] to answer: ", end="", flush=True)
-        input()
-        print("Recording... press Enter to stop.", flush=True)
+    print("Recording... press Enter to stop.", flush=True)
     pcm = recorder.record()
     if len(pcm) < audio.min_record_sec * audio.sample_rate:
         return ""
-    return agent.transcribe(to_wav_bytes(pcm, audio.sample_rate), audio.sample_rate)
+    return local_recognizer.recognize(pcm)
 
 
 if __name__ == "__main__":

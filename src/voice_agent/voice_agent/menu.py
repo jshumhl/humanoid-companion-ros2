@@ -36,14 +36,25 @@ def normalize(text):
 
 
 def match_choice(text, options):
-    """Index of the chosen option, or None if the answer was not understood."""
-    cleaned = normalize(text)
+    """Index of the chosen option, or None if the answer was not understood.
+
+    Accepts a keyword (设置), a position (一 / 1 / 第二), typed or spoken. Local
+    recognition marks speech it could not place as `[unk]`; a keyword still
+    counts next to one, but a bare position does not, because a single syllable
+    next to unrecognized speech is too easily a mishearing.
+    """
+    raw = text or ""
+    had_unknown = "[unk]" in raw
+    cleaned = normalize(raw.replace("[unk]", " "))
     if not cleaned:
         return None
 
     for i, option in enumerate(options):
-        if normalize(option.keyword) and normalize(option.keyword) in cleaned:
+        keyword = normalize(option.keyword)
+        if keyword and keyword in cleaned:
             return i
+    if had_unknown:
+        return None
     for i, _ in enumerate(options):
         if i < len(POSITION_WORDS) and any(word in cleaned for word in POSITION_WORDS[i]):
             return i
