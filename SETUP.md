@@ -324,7 +324,48 @@ After each part passes on its own, this command reruns every check and prints a 
 python -m voice_agent --check all
 ```
 
-## 7. Run the agent
+## 7. Gestures (optional)
+
+The robot can gesture while it speaks: waving on 你好, pointing at something it
+sees. Out of the box `gestures.backend` is `stub`, which only logs what it
+would do, so nothing needs to be connected.
+
+On the robot, switch it to ROS 2 in
+[src/voice_agent/config.yaml](src/voice_agent/config.yaml):
+
+```yaml
+gestures:
+  backend: ros2
+  ros2_topic: /gesture/request
+```
+
+The gesture name is then published as `std_msgs/String`, and your motion node
+subscribes to it:
+
+```bash
+ros2 topic echo /gesture/request
+```
+
+This needs a sourced ROS 2 environment, such as the container in
+`docker-compose.yml`. Without one, the agent logs a warning and uses the stub,
+so it still runs.
+
+Which gestures exist is set in
+[src/voice_agent/gestures.yaml](src/voice_agent/gestures.yaml), one entry per
+gesture with a `use_when` describing the situation to use it in and a
+`duration` matching the real movement. The system prompt is built from that
+file, so adding or reworking a gesture is a YAML edit.
+
+Every turn's chosen gesture is appended to
+`~/.cache/voice_agent/gesture-choices.log` as one JSON line, including turns
+with no gesture. Use it to see how often gestures fire before adjusting
+`use_when`:
+
+```bash
+jq -r '.gesture // "null"' ~/.cache/voice_agent/gesture-choices.log | sort | uniq -c
+```
+
+## 8. Run the agent
 
 ```bash
 source .venv/bin/activate

@@ -1,4 +1,5 @@
 import json
+import logging
 import threading
 
 from voice_agent.agent import Agent
@@ -10,7 +11,7 @@ SCENE = "我看到了两个人和一把椅子。"
 
 def make_agent(config, provider, describe_scene=lambda _: SCENE):
     tools = ToolRegistry([look_around_tool(config.narrator, describe_scene=describe_scene)])
-    return Agent(provider, tools, config)
+    return Agent(provider, tools, config, config.gesture_catalogue)
 
 
 def test_who_are_you(config, fake_provider):
@@ -39,6 +40,88 @@ def test_system_prompt_has_persona_and_tool_catalog(config, fake_provider):
     assert "巴克机器人" in system["content"]
     assert "- look_around()：" in system["content"]
     assert "{tools}" not in system["content"]
+
+
+def test_catalogued_gesture_rides_along_with_the_reply(config, fake_provider):
+    provider = fake_provider(['{"say": "你好，我是巴克机器人。", "gesture": "hello"}'])
+    reply = make_agent(config, provider).respond_to_text("你好")
+
+    assert reply.text == "你好，我是巴克机器人。"
+    assert reply.gesture == "hello"
+
+
+def test_unknown_gesture_is_dropped_but_the_reply_is_still_spoken(config, fake_provider, caplog):
+    provider = fake_provider(['{"say": "你好。", "gesture": "backflip"}'])
+    with caplog.at_level(logging.WARNING):
+        reply = make_agent(config, provider).respond_to_text("你好")
+
+    assert reply.text == "你好。"   # the reply survives
+    assert reply.gesture == ""     # the made-up gesture does not
+    assert not reply.fallback
+    assert "backflip" in caplog.text
+
+
+def test_reply_without_a_gesture_is_normal(config, fake_provider):
+    provider = fake_provider(['{"say": "今天天气不错。"}'])
+    reply = make_agent(config, provider).respond_to_text("今天天气怎么样？")
+
+    assert reply.text == "今天天气不错。"
+    assert reply.gesture == ""
+
+
+def test_tool_reply_can_carry_a_gesture(config, fake_provider):
+    provider = fake_provider(['{"tool": "look_around", "gesture": "point"}'])
+    reply = make_agent(config, provider).respond_to_text("你看见什么？")
+
+    assert reply.text == SCENE
+    assert (reply.tool, reply.gesture) == ("look_around", "point")
+
+
+def test_gesture_catalogue_is_in_the_system_prompt(config, fake_provider):
+    provider = fake_provider(['{"say": "你好。"}'])
+    make_agent(config, provider).respond_to_text("你好")
+
+    system = provider.chat_calls[0][0]["content"]
+    assert "- hello：第一次见到人，或者有人跟你打招呼的时候" in system
+    assert "如果都不合适，gesture 填 null。" in system
+    assert '"gesture": null' in system      # the example that chooses no gesture
+    assert "{gestures}" not in system
+
+
+def test_gesture_is_dropped_when_the_agent_has_no_catalogue(config, fake_provider):
+    tools = ToolRegistry([look_around_tool(config.narrator, describe_scene=lambda _: SCENE)])
+    provider = fake_provider(['{"say": "你好。", "gesture": "hello"}'])
+    reply = Agent(provider, tools, config).respond_to_text("你好")
+
+    assert reply.text == "你好。"
+    assert reply.gesture == ""
+
+
+class RecordingGestureLog:
+    def __init__(self):
+        self.entries = []
+
+    def record(self, user_text, gesture, reply="", tool="", fallback=""):
+        self.entries.append((user_text, gesture, fallback))
+
+
+def test_every_turn_is_logged_with_its_gesture_or_none(config, fake_provider):
+    gesture_log = RecordingGestureLog()
+    provider = fake_provider(['{"say": "你好。", "gesture": "hello"}',
+                              '{"say": "现在是下午三点。"}',
+                              ProviderUnavailable("DNS failure")])
+    tools = ToolRegistry([look_around_tool(config.narrator, describe_scene=lambda _: SCENE)])
+    agent = Agent(provider, tools, config, config.gesture_catalogue, gesture_log)
+
+    agent.respond_to_text("你好！")
+    agent.respond_to_text("现在几点？")
+    agent.respond_to_text("你是谁？")
+
+    assert gesture_log.entries == [
+        ("你好！", "hello", ""),
+        ("现在几点？", "", ""),          # no gesture is recorded too
+        ("你是谁？", "", "offline"),     # so are failed turns
+    ]
 
 
 def test_history_kept_across_turns(config, fake_provider):

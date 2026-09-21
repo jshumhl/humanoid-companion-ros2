@@ -1,0 +1,45 @@
+# Gesture catalogue for 巴克机器人.
+#
+# This file decides which gestures exist and, through `use_when`, when the
+# model reaches for them. The system prompt's gesture section is built from it
+# at startup, so tuning gesture behavior means editing this file, not the code.
+#
+# name      what the model writes in "gesture", and what the robot receives
+# use_when  the situation to use it in, in Chinese. Describe the moment, not
+#           the movement: "有人跟你打招呼的时候" works, "挥手" does not, because
+#           the model is choosing an occasion, not a pose.
+# duration  seconds the movement takes. Gesture requests arriving while one is
+#           playing are skipped, so this should match the real motion.
+
+gestures:
+  - name: hello
+    use_when: 第一次见到人，或者有人跟你打招呼的时候
+    duration: 2.0
+
+  - name: goodbye
+    use_when: 有人要离开、跟你说再见的时候
+    duration: 2.0
+
+  - name: point
+    use_when: 指出你看到的东西，或者回答东西在哪里、往哪边走
+    duration: 1.5
+
+  - name: nod
+    use_when: 表示同意、答应对方，或者听明白了
+    duration: 1.0
+
+# Few-shot examples appended to the gesture section of the system prompt.
+# They teach the shape of the decision, including when to choose no gesture,
+# which is the common case. `gesture: null` means no gesture.
+examples:
+  - user: 你好！
+    say: 你好，我是巴克机器人。很高兴认识你！
+    gesture: hello
+
+  - user: 现在几点？
+    say: 现在是下午三点十分。
+    gesture: null
+
+  - user: 洗手间在哪边？
+    say: 洗手间在那边，走廊尽头就是。
+    gesture: point

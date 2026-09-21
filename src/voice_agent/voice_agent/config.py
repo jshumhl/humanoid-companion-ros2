@@ -64,6 +64,17 @@ class ConversationConfig:
 
 
 @dataclass
+class GesturesConfig:
+    enabled: bool = True
+    backend: str = "stub"                       # stub | ros2
+    ros2_topic: str = "/gesture/request"
+    catalogue_file: str = "gestures.yaml"       # relative to this config file
+    log_path: str = "~/.cache/voice_agent/gesture-choices.log"
+    log_max_bytes: int = 1000000
+    log_backups: int = 3
+
+
+@dataclass
 class MenuOption:
     action: str      # settings | retry | quit
     keyword: str     # spoken word that selects it, e.g. 重试
@@ -102,18 +113,23 @@ class Config:
     speech_output: SpeechOutputConfig = field(default_factory=SpeechOutputConfig)
     timeouts: TimeoutConfig = field(default_factory=TimeoutConfig)
     conversation: ConversationConfig = field(default_factory=ConversationConfig)
+    gestures: GesturesConfig = field(default_factory=GesturesConfig)
     providers: dict = field(default_factory=dict)
     fallback_phrases: FallbackPhrases = field(default_factory=FallbackPhrases)
     offline_menu: OfflineMenuConfig = field(default_factory=OfflineMenuConfig)
 
     # Filled in by load_config, not read from YAML.
     narrator: object = field(default=None, repr=False)
+    gesture_catalogue: object = field(default=None, repr=False)
 
 
 SPEECH_ENGINES = ("edge-tts", "provider")
 VAD_SAMPLE_RATES = (8000, 16000, 32000, 48000)
 MENU_ACTIONS = ("settings", "retry", "quit")
 LOCAL_ASR_SAMPLE_RATE = 16000
+GESTURE_BACKENDS = ("stub", "ros2")
+# Loaded from other files by load_config, never read from config.yaml itself.
+DERIVED_FIELDS = ("narrator", "gesture_catalogue")
 MAX_MENU_OPTIONS = 3  # a spoken menu longer than this is hard to remember
 
 
@@ -130,10 +146,15 @@ def load_config(path):
         raise ConfigError(f"{path}: top level must be a mapping")
     if "narrator" in raw:
         raise ConfigError("narrator: set `narrator_config` to a file path instead")
+    if "gesture_catalogue" in raw:
+        raise ConfigError(
+            "gesture_catalogue: list gestures in gestures.yaml and point "
+            "`gestures.catalogue_file` at it instead")
 
     config = _build(Config, raw, "")
     validate(config)
     config.narrator = _load_narrator(path.parent, config.narrator_config)
+    config.gesture_catalogue = _load_gesture_catalogue(path.parent, config.gestures)
     return config
 
 
@@ -172,6 +193,7 @@ def validate(config):
     _require(config.system_prompt.strip() != "", "system_prompt must not be empty")
     _require("{tools}" in config.system_prompt,
              "system_prompt must contain the {tools} placeholder, where the tool list is inserted")
+    _validate_gestures(config.gestures, config.system_prompt)
 
     for f in dataclasses.fields(FallbackPhrases):
         _require(getattr(config.fallback_phrases, f.name).strip() != "",
@@ -182,6 +204,21 @@ def validate(config):
                  f"providers.{name} must be a mapping")
 
     _validate_menu(config.offline_menu)
+
+
+def _validate_gestures(gestures, system_prompt):
+    if not gestures.enabled:
+        return
+    _require(gestures.backend in GESTURE_BACKENDS,
+             f"gestures.backend must be one of {', '.join(GESTURE_BACKENDS)}, "
+             f"got {gestures.backend!r}")
+    _require(gestures.ros2_topic.strip() != "", "gestures.ros2_topic must not be empty")
+    _require(gestures.catalogue_file.strip() != "", "gestures.catalogue_file must not be empty")
+    _require(gestures.log_max_bytes > 0, "gestures.log_max_bytes must be > 0")
+    _require(gestures.log_backups >= 0, "gestures.log_backups must be >= 0")
+    _require("{gestures}" in system_prompt,
+             "system_prompt must contain the {gestures} placeholder when gestures are "
+             "enabled, so the model is told which gestures exist")
 
 
 def _validate_menu(menu):
@@ -220,6 +257,21 @@ def _load_narrator(base_dir, narrator_path):
         raise ConfigError(f"narrator_config ({path}): {e}") from e
 
 
+def _load_gesture_catalogue(base_dir, gestures):
+    """Load gestures.yaml, reporting its problems as config errors."""
+    from .gestures import GestureCatalogue, GestureCatalogueError, load_catalogue
+
+    if not gestures.enabled:
+        return GestureCatalogue([])
+    path = Path(gestures.catalogue_file).expanduser()
+    if not path.is_absolute():
+        path = base_dir / path
+    try:
+        return load_catalogue(path)
+    except GestureCatalogueError as e:
+        raise ConfigError(f"gestures.catalogue_file: {e}") from e
+
+
 def _require(condition, message):
     if not condition:
         raise ConfigError(message)
@@ -231,7 +283,7 @@ def _build(cls, raw, prefix):
         raise ConfigError(f"{prefix.rstrip('.') or 'config'} must be a mapping")
 
     hints = typing.get_type_hints(cls)
-    yaml_fields = {f.name: f for f in dataclasses.fields(cls) if f.name != "narrator"}
+    yaml_fields = {f.name: f for f in dataclasses.fields(cls) if f.name not in DERIVED_FIELDS}
     unknown = set(raw) - set(yaml_fields)
     if unknown:
         raise ConfigError(

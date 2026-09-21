@@ -50,6 +50,30 @@ conversation:
   max_history_turns: 10    # user/assistant pairs kept as context
   max_reply_sentences: 3   # longer model replies are cut to this
 
+# Gestures the model may attach to a reply, e.g.
+#   {"say": "你好，我是巴克机器人。", "gesture": "hello"}
+# The gesture starts when speech playback starts. Only catalogued names are
+# accepted; anything else is logged and dropped, and the reply is still spoken.
+# While a gesture is playing (its duration), further requests are skipped
+# rather than queued.
+gestures:
+  enabled: true
+  # stub: log the request only, move nothing (works with no robot and no ROS)
+  # ros2: publish the gesture name as std_msgs/String on ros2_topic
+  backend: stub
+  ros2_topic: /gesture/request
+
+  # Which gestures exist, when to use each one, and the few-shot examples for
+  # the prompt. Path is relative to this file.
+  catalogue_file: gestures.yaml
+
+  # Every turn's chosen gesture (or null) is appended here as one JSON line,
+  # for tuning gestures.yaml later. The file rotates, so it cannot grow without
+  # bound. Set log_path to "" to turn the log off.
+  log_path: ~/.cache/voice_agent/gesture-choices.log
+  log_max_bytes: 1000000
+  log_backups: 3
+
 # Per-provider settings. Only the section for the active LLM_PROVIDER is used.
 providers:
   dashscope:
@@ -75,6 +99,11 @@ system_prompt: |
 
   可用工具：
   {tools}
+
+  动作（gesture 字段）：
+  可以给回复加上一个动作，动作会在你说话的同时做出来，一次最多一个：
+  {"say": "你好，我是巴克机器人。", "gesture": "hello"}
+  {gestures}
 
   当用户问你看到了什么、周围有什么、面前有什么，或任何需要看的问题时，
   必须调用 look_around，不要猜测。look_around 返回的句子会原样朗读给用户，不要改写。

@@ -12,6 +12,14 @@ from voice_agent.protocol import ReplyFormatError, Say, ToolCall, clean_spoken, 
     ('好的：{"say": "你好。"} 以上', Say("你好。")),
     ('  {"say": "  你好。 "}  ', Say("你好。")),
     ("我是巴克机器人。", Say("我是巴克机器人。")),  # plain text, format ignored
+    # A gesture may ride along with either kind of reply
+    ('{"say": "你好。", "gesture": "hello"}', Say("你好。", "hello")),
+    ('{"say": "你好。", "gesture": " hello "}', Say("你好。", "hello")),
+    ('{"say": "你好。", "gesture": null}', Say("你好。", "")),
+    ('{"say": "你好。", "gesture": ""}', Say("你好。", "")),
+    ('{"tool": "look_around", "gesture": "point"}', ToolCall("look_around", {}, "point")),
+    # Unknown names are the catalogue's business, not the parser's
+    ('{"say": "你好。", "gesture": "backflip"}', Say("你好。", "backflip")),
 ])
 def test_parse_valid(raw, expected):
     assert parse_model_output(raw) == expected
@@ -29,6 +37,8 @@ def test_parse_valid(raw, expected):
     '{"tool": "look_around", "args": []}',
     '{"say": "hi", "tool": "look_around"}',
     '{"answer": "hi"}',
+    '{"say": "你好。", "gesture": ["hello"]}',
+    '{"say": "你好。", "gesture": 3}',
 ])
 def test_parse_invalid(raw):
     with pytest.raises(ReplyFormatError):

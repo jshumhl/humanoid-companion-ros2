@@ -56,6 +56,32 @@ def test_provider_tts_used_when_configured(tmp_path):
     assert speaker.synthesized == []
 
 
+def test_gesture_starts_with_playback_not_after(tmp_path):
+    """The callback must fire before play(), so the movement runs with the voice."""
+    events = []
+    speaker = FakeSpeaker()
+    speaker.play = lambda path: events.append("play")
+
+    SpeechOutput(speaker, tmp_path, timeout_sec=5).say(
+        "你好。", on_playback_start=lambda: events.append("gesture"))
+
+    assert events == ["gesture", "play"]
+
+
+def test_no_gesture_when_speech_cannot_be_produced(tmp_path):
+    """A gesture without its sentence would be a robot waving in silence."""
+    events = []
+    SpeechOutput(FakeSpeaker(fail=True), tmp_path, timeout_sec=5).say(
+        "你好。", on_playback_start=lambda: events.append("gesture"))
+    assert events == []
+
+
+def test_say_without_callback_still_speaks(tmp_path):
+    speaker = FakeSpeaker()
+    SpeechOutput(speaker, tmp_path, timeout_sec=5).say("你好。")
+    assert speaker.played == [b"ID3edge"]
+
+
 def test_provider_tts_failure_falls_back_to_edge_tts(tmp_path):
     speaker = FakeSpeaker()
     SpeechOutput(speaker, tmp_path, timeout_sec=5, provider=FakeTtsProvider(fail=True)).say("你好。")

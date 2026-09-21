@@ -29,15 +29,26 @@ class SpeechOutput:
         self._cache_dir = Path(cache_dir).expanduser()
         self._cache_dir.mkdir(parents=True, exist_ok=True)
 
-    def say(self, text):
-        """Speak text. Never raises: on failure the text is only printed."""
+    def say(self, text, on_playback_start=None):
+        """Speak text. Never raises: on failure the text is only printed.
+
+        `on_playback_start` runs once the audio is ready and playback is about
+        to begin, which is when a gesture should start so that it runs with the
+        voice rather than after it.
+        """
         path = self._cached_path(text)
         try:
             if not path.exists():
                 self._synthesize_to(text, path)
-            self._speaker.play(str(path))
         except Exception as e:
             log.warning("Could not speak %r: %s", text, e)
+            return
+        try:
+            if on_playback_start is not None:
+                on_playback_start()
+            self._speaker.play(str(path))
+        except Exception as e:
+            log.warning("Could not play %r: %s", text, e)
 
     def prepare(self, phrases):
         """Cache phrases now, while the network is likely up. Best effort."""

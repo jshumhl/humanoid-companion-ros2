@@ -17,12 +17,14 @@ from dataclasses import dataclass, field
 @dataclass(frozen=True)
 class Say:
     text: str
+    gesture: str = ""
 
 
 @dataclass(frozen=True)
 class ToolCall:
     name: str
     args: dict = field(default_factory=dict)
+    gesture: str = ""
 
 
 class ReplyFormatError(ValueError):
@@ -55,6 +57,8 @@ def parse_model_output(raw):
     if has_say and has_tool:
         raise ReplyFormatError("object has both 'say' and 'tool'")
 
+    gesture = _parse_gesture(obj)
+
     if has_tool:
         name = obj["tool"]
         args = obj.get("args", {})
@@ -64,15 +68,29 @@ def parse_model_output(raw):
             args = {}
         if not isinstance(args, dict):
             raise ReplyFormatError("'args' must be an object")
-        return ToolCall(name.strip(), args)
+        return ToolCall(name.strip(), args, gesture)
 
     if has_say:
         say = obj["say"]
         if not isinstance(say, str) or not say.strip():
             raise ReplyFormatError("'say' must be a non-empty string")
-        return Say(say.strip())
+        return Say(say.strip(), gesture)
 
     raise ReplyFormatError("object has neither 'say' nor 'tool'")
+
+
+def _parse_gesture(obj):
+    """At most one gesture name. Missing or null means no gesture.
+
+    Whether the name exists is decided against the catalogue later, so a made-up
+    name costs the reply nothing.
+    """
+    gesture = obj.get("gesture")
+    if gesture is None:
+        return ""
+    if not isinstance(gesture, str):
+        raise ReplyFormatError("'gesture' must be a string")
+    return gesture.strip()
 
 
 _MARKDOWN = re.compile(r"[*#`_>|~]+")

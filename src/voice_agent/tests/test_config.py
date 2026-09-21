@@ -12,7 +12,9 @@ NARRATOR_CONFIG = str(PACKAGE_DIR.parent / "object_narrator" / "config.yaml")
 
 def write_config(tmp_path, **overrides):
     raw = yaml.safe_load(SHIPPED_CONFIG.read_text(encoding="utf-8"))
+    # Paths in the shipped config are relative to it, and the copy lives elsewhere.
     raw["narrator_config"] = NARRATOR_CONFIG
+    raw["gestures"]["catalogue_file"] = str(PACKAGE_DIR / "gestures.yaml")
     for dotted, value in overrides.items():
         node = raw
         *parents, leaf = dotted.split("__")
@@ -37,6 +39,32 @@ def test_shipped_config_loads():
     assert config.speech_output.engine == "edge-tts"
     assert "{tools}" in config.system_prompt
     assert [o.action for o in config.offline_menu.options] == ["settings", "retry", "quit"]
+
+
+def test_gesture_catalogue_is_loaded_from_its_own_file():
+    config = load_config(SHIPPED_CONFIG)
+    assert config.gestures.backend == "stub"
+    assert config.gestures.catalogue_file == "gestures.yaml"
+    assert config.gesture_catalogue.names() == ["hello", "goodbye", "point", "nod"]
+    assert config.gesture_catalogue.get("hello").duration == 2.0
+
+
+def test_broken_catalogue_file_is_reported_as_a_config_error(tmp_path):
+    catalogue = tmp_path / "gestures.yaml"
+    catalogue.write_text("gestures:\n  - name: hello\n    duration: 2.0\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="gestures.catalogue_file:.*use_when"):
+        load_config(write_config(tmp_path, gestures__catalogue_file=str(catalogue)))
+
+
+def test_inline_catalogue_is_rejected_with_a_pointer_to_the_file(tmp_path):
+    with pytest.raises(ConfigError, match="Unknown key\\(s\\) gestures.catalogue\\b"):
+        load_config(write_config(tmp_path, gestures__catalogue=[{"name": "hello"}]))
+
+
+def test_gestures_can_be_disabled_without_a_prompt_placeholder(tmp_path):
+    config = load_config(write_config(tmp_path, gestures__enabled=False,
+                                      system_prompt="你是巴克机器人。{tools}"))
+    assert config.gestures.enabled is False
 
 
 def test_other_sample_rates_allowed_without_the_local_recognizer(tmp_path):
@@ -80,6 +108,14 @@ def test_device_name_allowed(tmp_path):
     ({"fallback_phrases__offline": " "}, "fallback_phrases.offline must not be empty"),
     ({"providers": ["dashscope"]}, "providers must be dict"),
     ({"narrator_config": "/nonexistent/config.yaml"}, "narrator_config: file not found"),
+    ({"gestures__backend": "servo"}, "gestures.backend must be one of stub, ros2"),
+    ({"gestures__ros2_topic": " "}, "gestures.ros2_topic must not be empty"),
+    ({"gestures__catalogue_file": " "}, "gestures.catalogue_file must not be empty"),
+    ({"gestures__catalogue_file": "/nonexistent/gestures.yaml"},
+     "gestures.catalogue_file: Gesture catalogue not found"),
+    ({"gestures__log_max_bytes": 0}, "gestures.log_max_bytes must be > 0"),
+    ({"gestures__log_backups": -1}, "gestures.log_backups must be >= 0"),
+    ({"system_prompt": "你是巴克机器人。{tools}"}, "{gestures} placeholder"),
     ({"local_asr__model_path": " "}, "local_asr.model_path must not be empty"),
     ({"audio__sample_rate": 48000}, "audio.sample_rate must be 16000 when local_asr.enabled"),
     ({"offline_menu__max_attempts": 0}, "offline_menu.max_attempts must be >= 1"),

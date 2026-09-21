@@ -28,8 +28,19 @@ class FakeSpeech:
     def __init__(self):
         self.spoken = []
 
-    def say(self, text):
+    def say(self, text, on_playback_start=None):
+        if on_playback_start is not None:
+            on_playback_start()
         self.spoken.append(text)
+
+
+class FakeGestures:
+    def __init__(self):
+        self.requested = []
+
+    def request(self, name):
+        self.requested.append(name)
+        return True
 
 
 def test_listen_once_uses_the_local_recognizer(config, monkeypatch):
@@ -91,6 +102,35 @@ def test_offline_reply_is_spoken_when_menu_disabled(config):
     speech = FakeSpeech()
     deliver(reply, speech, say_reply=True)
     assert speech.spoken == [config.fallback_phrases.offline]
+
+
+def test_gesture_is_requested_when_the_reply_is_spoken(config, capsys):
+    speech, gestures = FakeSpeech(), FakeGestures()
+    deliver(Reply("你好，我是巴克机器人。", gesture="hello"), speech, gestures=gestures)
+
+    assert gestures.requested == ["hello"]
+    assert speech.spoken == ["你好，我是巴克机器人。"]
+    assert "gesture=hello" in capsys.readouterr().out
+
+
+def test_reply_without_a_gesture_requests_nothing(config):
+    speech, gestures = FakeSpeech(), FakeGestures()
+    deliver(Reply("今天天气不错。"), speech, gestures=gestures)
+
+    assert gestures.requested == []
+    assert speech.spoken == ["今天天气不错。"]
+
+
+def test_gesture_is_requested_with_audio_disabled(config):
+    gestures = FakeGestures()
+    deliver(Reply("你好。", gesture="hello"), None, gestures=gestures)
+    assert gestures.requested == ["hello"]
+
+
+def test_reply_is_spoken_even_with_no_gesture_controller(config):
+    speech = FakeSpeech()
+    deliver(Reply("你好。", gesture="hello"), speech, gestures=None)
+    assert speech.spoken == ["你好。"]
 
 
 def test_other_fallbacks_are_still_spoken(config):

@@ -90,7 +90,10 @@ option. The main ones:
 | `timeouts.*_sec` | 15–20 | Longest wait for ASR, LLM, TTS or a tool before using a fallback phrase |
 | `conversation.max_history_turns` | `10` | Past exchanges sent with each request |
 | `providers.dashscope.*` | see file | Model names |
-| `system_prompt` | persona | Must contain `{tools}`, which is replaced with the tool list |
+| `gestures.catalogue_file` | `gestures.yaml` | Which gestures exist and when to use them (below) |
+| `gestures.backend` | `stub` | `stub` logs only; `ros2` publishes to `ros2_topic` |
+| `gestures.log_path` | `~/.cache/voice_agent/gesture-choices.log` | Per-turn record of the chosen gesture, for tuning |
+| `system_prompt` | persona | Must contain `{tools}` and `{gestures}`, replaced with the tool and gesture lists |
 | `fallback_phrases.*` | Chinese phrases | `not_heard`, `offline`, `error`, `tool_failed` |
 | `offline_menu.*` | 3 options | Spoken menu offered when the provider is unreachable (below) |
 
@@ -217,6 +220,132 @@ Tool(name="what_time", signature="what_time()",
 The tool list in the system prompt is generated from the registry, so no prompt
 edit is needed unless the model needs guidance on when to use the tool.
 
+## Gestures
+
+The model may attach at most one gesture to a reply:
+
+```json
+{"say": "你好，我是巴克机器人。", "gesture": "hello"}
+{"tool": "look_around", "gesture": "point"}
+```
+
+The gesture is requested **when speech playback starts**, so the movement runs
+with the voice instead of after it. If the sentence can't be synthesized, no
+gesture is sent: a robot waving in silence is worse than one standing still.
+
+Only catalogued names are accepted. A made-up name is logged and dropped, and
+the reply is still spoken normally.
+
+**While a gesture is playing, further requests are skipped, not queued.** By
+the time a queued gesture ran, the sentence it belonged to would be over.
+
+### The catalogue: gestures.yaml
+
+Which gestures exist, and when to use them, live in
+[gestures.yaml](gestures.yaml), not in code and not in `config.yaml`:
+
+```yaml
+gestures:
+  - name: hello                                  # what the model writes
+    use_when: 第一次见到人，或者有人跟你打招呼的时候   # the situation, not the pose
+    duration: 2.0                                # requests during this are skipped
+
+examples:
+  - user: 你好！
+    say: 你好，我是巴克机器人。
+    gesture: hello
+  - user: 现在几点？
+    say: 现在是下午三点十分。
+    gesture: null                                # the common case
+```
+
+`use_when` describes the *occasion*, because that is what the model is
+choosing. "有人跟你打招呼的时候" guides the choice; "挥手" only describes the
+movement and tells the model nothing about when it applies.
+
+`config.yaml` just points at the file:
+
+```yaml
+gestures:
+  enabled: true
+  backend: stub                  # stub | ros2
+  ros2_topic: /gesture/request
+  catalogue_file: gestures.yaml  # relative to config.yaml
+```
+
+The file is validated on load: names unique, `use_when` non-empty, `duration`
+positive, example gestures present in the list. Problems are reported as
+config errors that name the entry, e.g.
+`gestures.catalogue_file: .../gestures.yaml: gestures[1].duration must be a number greater than 0`.
+
+### The generated prompt section
+
+At startup the whole gesture section of the system prompt is built from that
+file and inserted in place of `{gestures}`:
+
+```
+只能从下列动作中选择。
+如果都不合适，gesture 填 null。
+大多数回复不需要动作，只在自然的时候使用。
+
+可用动作：
+- hello：第一次见到人，或者有人跟你打招呼的时候
+- goodbye：有人要离开、跟你说再见的时候
+- point：指出你看到的东西，或者回答东西在哪里、往哪边走
+- nod：表示同意、答应对方，或者听明白了
+
+例子：
+用户：你好！
+你：{"say": "你好，我是巴克机器人。很高兴认识你！", "gesture": "hello"}
+用户：现在几点？
+你：{"say": "现在是下午三点十分。", "gesture": null}
+用户：洗手间在哪边？
+你：{"say": "洗手间在那边，走廊尽头就是。", "gesture": "point"}
+```
+
+Adding a gesture or rewording a `use_when` is therefore a YAML edit; no code
+changes, and the robot side decides what a name means.
+
+### Tuning log
+
+Every turn is appended to a rotating log, one JSON object per line:
+
+```json
+{"time": "2026-09-21T18:15:03", "user": "你好！", "gesture": "hello", "reply": "你好呀，我是巴克机器人。…"}
+{"time": "2026-09-21T18:15:05", "user": "现在几点？", "gesture": null, "reply": "现在是下午三点半。"}
+```
+
+Turns with no gesture are recorded too, as `null`. What usually needs tuning is
+how often a gesture is chosen at all, and that can't be seen from the gestures
+alone. Tool and fallback turns carry a `tool` or `fallback` field.
+
+```yaml
+gestures:
+  log_path: ~/.cache/voice_agent/gesture-choices.log   # "" turns the log off
+  log_max_bytes: 1000000
+  log_backups: 3
+```
+
+Counting choices from a session:
+
+```bash
+jq -r '.gesture // "null"' ~/.cache/voice_agent/gesture-choices.log | sort | uniq -c
+```
+
+### Backends
+
+| Backend | Behavior |
+|---|---|
+| `stub` (default) | Logs `would request gesture: hello` and prints it. Works with no robot and no ROS |
+| `ros2` | Publishes the gesture name as `std_msgs/String` on `ros2_topic`, default `/gesture/request` |
+
+`rclpy` is imported inside the ROS 2 backend's constructor, so nothing
+ROS-related loads unless that backend is selected: **voice_agent runs normally
+with no ROS installed.** If `ros2` is selected but ROS is unavailable, it logs
+a warning and falls back to the stub rather than failing to start. Run the ROS 2
+backend in the container from `docker-compose.yml` (Ubuntu 22.04, ROS 2 Humble),
+and watch it with `ros2 topic echo /gesture/request`.
+
 ## Providers
 
 ```
@@ -264,10 +393,12 @@ python -m pytest tests
 The tests cover reply parsing and cleanup, tool dispatch, the agent's turn
 logic with a scripted provider (including offline, hanging, bad-JSON and
 camera-failure cases), the offline menu (keyword and number answers, failed
-attempts, `[unk]` handling), the Vosk grammar built from the options, config
-validation, provider selection, ASR response parsing, the speech cache, and
-VAD segmentation. No model file is needed: the recognizer itself is covered by
-`--check local-asr`. They need no network,
+attempts, `[unk]` handling), the Vosk grammar built from the options, gestures
+(catalogue validation, skipping while one plays, backend fallback, firing at
+playback start), config validation, provider selection, ASR response parsing,
+the speech cache, and VAD segmentation. They need no network, microphone, Vosk
+model or ROS: the ROS 2 tests skip themselves when `rclpy` is missing, and the
+recognizer itself is covered by `--check local-asr`. They need no network,
 microphone or camera. Use `--check` for those.
 
 ## Layout
@@ -280,6 +411,9 @@ microphone or camera. Use `--check` for those.
 | `voice_agent/menu.py` | Offline menu: keyword/number matching and attempt limit |
 | `voice_agent/local_asr.py` | Offline recognition of menu answers (Vosk, grammar from the options) |
 | `voice_agent/tools.py` | Tool registry and `look_around` |
+| `voice_agent/gestures.py` | Gesture catalogue and prompt section, skip-while-playing, stub and ROS 2 backends |
+| `voice_agent/gesture_log.py` | Rotating per-turn record of chosen gestures |
+| `gestures.yaml` | The catalogue itself: names, `use_when`, durations, few-shot examples |
 | `voice_agent/audio.py` | Microphone capture (push-to-talk, webrtcvad), WAV encoding |
 | `voice_agent/speech.py` | TTS with offline phrase cache, playback via `object_narrator` |
 | `voice_agent/config.py` | Config dataclasses and validation |

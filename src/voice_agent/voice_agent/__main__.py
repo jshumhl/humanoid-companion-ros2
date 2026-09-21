@@ -76,8 +76,13 @@ def main(argv=None):
         return 2
 
     from .agent import Agent
+    from .gesture_log import open_gesture_log
+    from .gestures import build_controller
     from .tools import default_tools
-    agent = Agent(provider, default_tools(config.narrator), config)
+    gestures = build_controller(config.gestures, config.gesture_catalogue)
+    gesture_log = open_gesture_log(config.gestures) if config.gestures.enabled else None
+    agent = Agent(provider, default_tools(config.narrator), config,
+                  config.gesture_catalogue, gesture_log)
 
     speech = None
     if not args.no_audio:
@@ -94,12 +99,16 @@ def main(argv=None):
 
     try:
         if args.text:
-            text_loop(agent, speech, config)
+            text_loop(agent, speech, config, gestures)
         else:
             warn_if_local_recognizer_missing(config)
-            voice_loop(agent, speech, config)
+            voice_loop(agent, speech, config, gestures)
     except (KeyboardInterrupt, EOFError):
         print()
+    finally:
+        gestures.close()
+        if gesture_log:
+            gesture_log.close()
     return 0
 
 
@@ -119,7 +128,7 @@ def make_speech_output(config, provider):
     )
 
 
-def deliver(reply, speech, say_reply=True):
+def deliver(reply, speech, say_reply=True, gestures=None):
     """Show and speak a reply. With say_reply=False only the transcript is shown,
     which is used when the offline menu is about to say the same thing."""
     if reply.heard:
@@ -128,9 +137,18 @@ def deliver(reply, speech, say_reply=True):
         return
     tags = [f"tool={reply.tool}"] if reply.tool else []
     tags += [f"fallback={reply.fallback}"] if reply.fallback else []
+    tags += [f"gesture={reply.gesture}"] if reply.gesture else []
     print(f"巴克：{reply.text}" + (f"   [{', '.join(tags)}]" if tags else ""), flush=True)
+
+    start_gesture = None
+    if gestures is not None and reply.gesture:
+        start_gesture = lambda: gestures.request(reply.gesture)  # noqa: E731
+
     if speech:
-        speech.say(reply.text)
+        # The gesture starts with the audio, not after it.
+        speech.say(reply.text, on_playback_start=start_gesture)
+    elif start_gesture:
+        start_gesture()  # --no-audio: nothing to sync with
 
 
 def lazy_local_recognizer(config):
@@ -199,7 +217,7 @@ def print_settings(agent, config):
     print("  Try: python -m voice_agent --check llm", flush=True)
 
 
-def text_loop(agent, speech, config):
+def text_loop(agent, speech, config, gestures=None):
     print("Text mode. Type a message, or q to quit.")
     while True:
         line = input("\n你：").strip()
@@ -210,7 +228,7 @@ def text_loop(agent, speech, config):
         reply = agent.respond_to_text(line)
         # The menu opens with its own "cannot connect" line, so the plain
         # offline phrase would just repeat it.
-        deliver(reply, speech, say_reply=not menu_follows(reply, config))
+        deliver(reply, speech, say_reply=not menu_follows(reply, config), gestures=gestures)
         if reply.fallback == "offline":
             action = offer_offline_menu(
                 agent, speech, config,
@@ -221,7 +239,7 @@ def text_loop(agent, speech, config):
                 return
 
 
-def voice_loop(agent, speech, config):
+def voice_loop(agent, speech, config, gestures=None):
     from .audio import make_recorder, to_wav_bytes
 
     audio = config.audio
@@ -261,7 +279,7 @@ def voice_loop(agent, speech, config):
             continue
 
         reply = agent.respond_to_audio(to_wav_bytes(pcm, audio.sample_rate), audio.sample_rate)
-        deliver(reply, speech, say_reply=not menu_follows(reply, config))
+        deliver(reply, speech, say_reply=not menu_follows(reply, config), gestures=gestures)
         if reply.fallback == "offline":
             action = offer_offline_menu(
                 agent, speech, config,
