@@ -1,8 +1,12 @@
-"""Speaking a reply: one sentence at a time, stoppable, with a length guard.
+"""Speaking a reply: stoppable, with a length guard.
 
-A turn is spoken sentence by sentence rather than in one piece, so that an
-interruption takes effect at the next sentence boundary at the latest, and so
-a long reply can stop after a few sentences and ask whether to go on.
+A reply is spoken as one piece of audio, not sentence by sentence. Each
+playback opens the audio device again, which was clearly audible as a pause at
+every 。 Interruption does not need the split: the player is terminated
+mid-word whenever the watcher fires.
+
+Sentences still matter for the length guard: only the first N are spoken, and
+the rest are held back behind 还要继续吗.
 
 The interrupt watcher is armed for the whole turn, the model call included: a
 person who interrupts while the robot is still thinking should not have to

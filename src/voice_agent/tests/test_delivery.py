@@ -38,27 +38,39 @@ class FakeWatcher:
 
 
 class FakeSpeech:
-    """Speaks sentences, optionally interrupting at one of them."""
+    """Speaks whole pieces, optionally interrupting the nth one.
 
-    def __init__(self, watcher=None, interrupt_at=None, stop_after=0.05):
+    `played` is how many seconds of audio ran before the interruption, which
+    decides how much of the text counts as heard.
+    """
+
+    def __init__(self, watcher=None, interrupt_at=None, stop_after=0.05, played=1.0):
+        self._played = played
         self.spoken = []
         self.gestures = []
+        self.prefetched = []
         self._watcher = watcher
         self._interrupt_at = interrupt_at
         self._stop_after = stop_after
 
+    def prefetch(self, text):
+        if text:
+            self.prefetched.append(text)
+
     def say(self, text, on_playback_start=None, interrupt=None):
         if interrupt is not None and interrupt.is_set():
-            return SpeakResult(spoken=False, interrupted=True, stopped_at=100.0)
+            return SpeakResult(spoken=False, interrupted=True,
+                               started_at=100.0, stopped_at=100.0)
         if on_playback_start is not None:
             on_playback_start()
             self.gestures.append(text)
         if self._interrupt_at is not None and len(self.spoken) == self._interrupt_at:
             self._watcher.interrupt(at=100.0)
-            return SpeakResult(spoken=False, interrupted=True,
+            # played_sec decides how much of the text counts as heard
+            return SpeakResult(spoken=False, interrupted=True, started_at=100.0 - self._played,
                                stopped_at=100.0 + self._stop_after)
         self.spoken.append(text)
-        return SpeakResult(spoken=True)
+        return SpeakResult(spoken=True, started_at=100.0, stopped_at=101.0)
 
 
 class FakeAgent:
@@ -85,42 +97,56 @@ def make_delivery(config, speech, watcher=None, gestures=None, agent=None):
     return delivery, watcher
 
 
-def test_short_reply_is_spoken_in_full(config, ):
+def test_short_reply_is_spoken_as_one_piece(config):
+    """One playback, not one per sentence: a new player reopens the audio
+    device, which is audible as a pause at every 。"""
     speech = FakeSpeech()
     delivery, watcher = make_delivery(config, speech)
 
     outcome = delivery.respond_and_speak(lambda cancel: Reply("你好。很高兴见到你。"))
 
-    assert speech.spoken == ["你好。", "很高兴见到你。"]
+    assert speech.spoken == ["你好。很高兴见到你。"]
     assert outcome.delivered and not outcome.paused
     assert watcher.armed_count == 1 and watcher.disarmed_count == 1
 
 
-def test_gesture_starts_with_the_first_sentence(config):
+def test_gesture_starts_with_the_reply(config):
     speech, gestures = FakeSpeech(), FakeGestures()
     delivery, _ = make_delivery(config, speech, gestures=gestures)
 
     delivery.respond_and_speak(lambda cancel: Reply("你好。第二句。", gesture="hello"))
 
     assert gestures.requested == ["hello"]
-    assert speech.gestures == ["你好。"]  # not repeated on later sentences
+
+
+def test_the_held_back_part_is_prepared_while_the_reply_plays(config):
+    """Otherwise 继续 would wait for synthesis that could have happened already."""
+    config.conversation.max_reply_sentences = 3
+    speech = FakeSpeech()
+    delivery, _ = make_delivery(config, speech)
+
+    delivery.respond_and_speak(lambda cancel: Reply(FIVE_SENTENCES))
+
+    assert config.conversation.continue_prompt in speech.prefetched
+    assert "第四句。第五句。" in speech.prefetched
 
 
 # --- interruption ---
 
 def test_playback_stops_and_the_rest_is_discarded(config, caplog):
     watcher = FakeWatcher()
-    speech = FakeSpeech(watcher, interrupt_at=1)  # interrupt during the second sentence
+    # Interrupted after 0.8 s of audio, so about four characters were heard.
+    speech = FakeSpeech(watcher, interrupt_at=0, played=0.8)
     agent = FakeAgent()
     delivery, _ = make_delivery(config, speech, watcher, agent=agent)
 
     with caplog.at_level(logging.INFO):
         outcome = delivery.respond_and_speak(lambda cancel: Reply(FIVE_SENTENCES))
 
-    assert speech.spoken == ["第一句。"]          # nothing after the interruption
+    assert speech.spoken == []                    # the piece never finished
     assert outcome.interrupted and outcome.interrupted_by == "enter"
     assert not delivery.has_pending               # the robot never resumes
-    assert agent.interrupted_with == "第一句。"    # history records what was heard
+    assert agent.interrupted_with == "第一句。"    # roughly what was heard
     assert "stopped in 50 ms" in caplog.text
 
 
@@ -175,7 +201,7 @@ def test_long_reply_stops_after_n_sentences_and_asks(config):
 
     outcome = delivery.respond_and_speak(lambda cancel: Reply(FIVE_SENTENCES))
 
-    assert speech.spoken == ["第一句。", "第二句。", "第三句。", config.conversation.continue_prompt]
+    assert speech.spoken == ["第一句。第二句。第三句。", config.conversation.continue_prompt]
     assert outcome.paused and delivery.has_pending
 
 
@@ -189,7 +215,7 @@ def test_continuing_speaks_the_rest(config):
     assert delivery.wants_continue("好，继续") is True
     delivery.resume()
 
-    assert speech.spoken == ["第四句。", "第五句。"]
+    assert speech.spoken == ["第四句。第五句。"]
     assert not delivery.has_pending
 
 
@@ -219,7 +245,7 @@ def test_a_reply_of_exactly_n_sentences_does_not_ask(config):
 
     outcome = delivery.respond_and_speak(lambda cancel: Reply("第一句。第二句。第三句。"))
 
-    assert speech.spoken == ["第一句。", "第二句。", "第三句。"]
+    assert speech.spoken == ["第一句。第二句。第三句。"]
     assert not outcome.paused and not delivery.has_pending
 
 

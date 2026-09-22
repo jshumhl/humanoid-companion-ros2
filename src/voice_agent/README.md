@@ -242,6 +242,12 @@ it could, the person has moved on. Measured with the real player, playback
 goes silent 16–23 ms after the interrupt; anything over 200 ms is logged as a
 warning.
 
+A reply is spoken as a single piece of audio rather than sentence by sentence.
+Splitting it sounded wrong: each playback reopens the audio device, which added
+0.2–1.0 s of silence at every 。 Interruption does not need the split, since
+the player can be stopped mid-word. What is held back by the length guard is
+synthesized while the first part plays, so 继续 starts speaking at once.
+
 ```
 INFO voice_agent.delivery: Interrupted by enter after 12 characters; playback stopped in 18 ms
 ```
@@ -252,7 +258,8 @@ waiting for an answer nobody wants. The HTTP call may still finish in its own
 thread — a blocking socket read cannot be cancelled from outside — but its
 result is discarded and never spoken.
 
-Conversation history records what was actually heard:
+Conversation history records roughly what was actually heard, estimated from
+how long the audio played:
 
 ```json
 {"say": "我是巴克机器人。", "interrupted": true, "note": "用户打断了这句话，后面的内容没有说完"}
@@ -471,7 +478,7 @@ microphone or camera. Use `--check` for those.
 |---|---|
 | `voice_agent/__main__.py` | CLI, push-to-talk / VAD / text loops |
 | `voice_agent/agent.py` | One turn: ASR → LLM → parse → tool → reply; history; fallbacks |
-| `voice_agent/delivery.py` | Speaking a reply: sentence by sentence, stoppable, length guard |
+| `voice_agent/delivery.py` | Speaking a reply: stoppable playback, length guard, continuations |
 | `voice_agent/interrupt.py` | Enter and sustained-speech interrupt sources |
 | `voice_agent/protocol.py` | JSON reply schema parsing, spoken-text cleanup |
 | `voice_agent/menu.py` | Offline menu: keyword/number matching and attempt limit |
