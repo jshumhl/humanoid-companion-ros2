@@ -20,7 +20,8 @@ class ConfigError(ValueError):
 
 @dataclass
 class VadConfig:
-    enabled: bool = False
+    """Tuning for always_on listening and for voice interruption."""
+
     aggressiveness: int = 2          # 0 (least) to 3 (most aggressive filtering)
     silence_ms: int = 800            # trailing silence that ends an utterance
     start_timeout_sec: float = 10.0  # give up if nobody speaks for this long
@@ -33,6 +34,13 @@ class AudioConfig:
     max_record_sec: float = 20.0
     min_record_sec: float = 0.3
     vad: VadConfig = field(default_factory=VadConfig)
+
+
+@dataclass
+class ListeningConfig:
+    mode: str = "push_to_talk"      # push_to_talk | always_on
+    interrupt_ms: int = 300         # always_on: speech this long during playback interrupts
+    playback_poll_ms: int = 20      # how often playback checks for an interrupt
 
 
 @dataclass
@@ -60,7 +68,10 @@ class TimeoutConfig:
 @dataclass
 class ConversationConfig:
     max_history_turns: int = 10
-    max_reply_sentences: int = 3
+    max_reply_sentences: int = 3       # sentences spoken before asking to continue
+    continue_prompt: str = "还要继续吗？"
+    continue_words: List[str] = field(
+        default_factory=lambda: ["继续", "要", "好", "嗯", "是", "说吧", "对"])
 
 
 @dataclass
@@ -109,6 +120,7 @@ class Config:
     system_prompt: str
     narrator_config: str = "../object_narrator/config.yaml"
     audio: AudioConfig = field(default_factory=AudioConfig)
+    listening: ListeningConfig = field(default_factory=ListeningConfig)
     local_asr: LocalAsrConfig = field(default_factory=LocalAsrConfig)
     speech_output: SpeechOutputConfig = field(default_factory=SpeechOutputConfig)
     timeouts: TimeoutConfig = field(default_factory=TimeoutConfig)
@@ -126,6 +138,7 @@ class Config:
 SPEECH_ENGINES = ("edge-tts", "provider")
 VAD_SAMPLE_RATES = (8000, 16000, 32000, 48000)
 MENU_ACTIONS = ("settings", "retry", "quit")
+LISTENING_MODES = ("push_to_talk", "always_on")
 LOCAL_ASR_SAMPLE_RATE = 16000
 GESTURE_BACKENDS = ("stub", "ros2")
 # Loaded from other files by load_config, never read from config.yaml itself.
@@ -169,9 +182,18 @@ def validate(config):
     _require(0 <= vad.aggressiveness <= 3, "audio.vad.aggressiveness must be 0, 1, 2 or 3")
     _require(vad.silence_ms >= 100, "audio.vad.silence_ms must be >= 100")
     _require(vad.start_timeout_sec > 0, "audio.vad.start_timeout_sec must be > 0")
-    if vad.enabled:
+
+    listening = config.listening
+    _require(listening.mode in LISTENING_MODES,
+             f"listening.mode must be one of {', '.join(LISTENING_MODES)}, got {listening.mode!r}")
+    _require(listening.interrupt_ms >= 30,
+             "listening.interrupt_ms must be >= 30 (one VAD frame)")
+    _require(0 < listening.playback_poll_ms <= 200,
+             "listening.playback_poll_ms must be between 1 and 200, so playback stops promptly")
+    if listening.mode == "always_on":
         _require(audio.sample_rate in VAD_SAMPLE_RATES,
-                 f"audio.sample_rate must be one of {VAD_SAMPLE_RATES} when audio.vad.enabled is true")
+                 f"audio.sample_rate must be one of {VAD_SAMPLE_RATES} when "
+                 f"listening.mode is always_on")
 
     if config.local_asr.enabled:
         _require(config.local_asr.model_path.strip() != "",
@@ -187,8 +209,14 @@ def validate(config):
     for f in dataclasses.fields(TimeoutConfig):
         _require(getattr(config.timeouts, f.name) > 0, f"timeouts.{f.name} must be > 0")
 
-    _require(config.conversation.max_history_turns >= 0, "conversation.max_history_turns must be >= 0")
-    _require(config.conversation.max_reply_sentences >= 1, "conversation.max_reply_sentences must be >= 1")
+    conversation = config.conversation
+    _require(conversation.max_history_turns >= 0, "conversation.max_history_turns must be >= 0")
+    _require(conversation.max_reply_sentences >= 1, "conversation.max_reply_sentences must be >= 1")
+    _require(conversation.continue_prompt.strip() != "",
+             "conversation.continue_prompt must not be empty")
+    _require(bool(conversation.continue_words) and
+             all(word.strip() for word in conversation.continue_words),
+             "conversation.continue_words must be a non-empty list of non-empty words")
 
     _require(config.system_prompt.strip() != "", "system_prompt must not be empty")
     _require("{tools}" in config.system_prompt,
@@ -324,6 +352,11 @@ def _dataclass_list_item(expected):
 
 def _check_type(value, expected, key):
     origin = typing.get_origin(expected)
+    if origin is list:
+        if not isinstance(value, list):
+            raise ConfigError(f"{key} must be a list, got {value!r}")
+        (item_type,) = typing.get_args(expected) or (object,)
+        return [_check_type(item, item_type, f"{key}[{i}]") for i, item in enumerate(value)]
     if origin in (Union, types.UnionType):
         options = typing.get_args(expected)
         for option in options:

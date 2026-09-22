@@ -117,7 +117,7 @@ class VadRecorder:
             import webrtcvad
         except ImportError as e:
             raise RuntimeError(
-                "audio.vad.enabled is true but webrtcvad is not installed. "
+                "listening.mode is always_on but webrtcvad is not installed. "
                 "Run: pip install webrtcvad-wheels"
             ) from e
         self._config = audio_config
@@ -146,7 +146,8 @@ class VadRecorder:
         return segmenter.samples()
 
 
-def make_recorder(audio_config):
-    if audio_config.vad.enabled:
+def make_recorder(audio_config, mode="push_to_talk"):
+    """push_to_talk: Enter starts and stops. always_on: VAD finds the utterance."""
+    if mode == "always_on":
         return VadRecorder(audio_config)
     return PushToTalkRecorder(audio_config)

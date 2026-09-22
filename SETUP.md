@@ -380,6 +380,17 @@ python -m voice_agent
 
 The first 你看见什么？ takes a few seconds longer, because the detection model loads then.
 
+**Stopping the robot:** press Enter while it is speaking and it goes quiet
+immediately, drops the rest of the reply, and listens again. For hands-free
+use, set `listening.mode: always_on` in
+[src/voice_agent/config.yaml](src/voice_agent/config.yaml): the robot then
+listens continuously (`pip install webrtcvad-wheels`) and speaking over it
+interrupts it. If the microphone picks up the robot's own speaker and it
+interrupts itself, raise `listening.interrupt_ms`.
+
+Long answers stop after three sentences and ask 还要继续吗. Say 继续 to hear
+the rest; anything else drops it.
+
 Without a microphone or speaker, you can still try the conversation by typing:
 
 ```bash
@@ -392,6 +403,8 @@ Add `-v` to any command to see the raw model output and debug logs.
 
 | Symptom | Fix |
 |---|---|
+| Robot interrupts itself in `always_on` mode | Its microphone hears its speaker. Raise `listening.interrupt_ms`, lower the volume, or use `push_to_talk` |
+| Robot keeps asking 还要继续吗 | Its replies are long. Raise `conversation.max_reply_sentences` |
 | Robot offers the menu but can't hear the answer | Run `--check local-asr`. Type 1, 2 or 3 in the meantime |
 | Warning at startup: `Vosk model not found` | Do step 4, or set `local_asr.enabled: false` |
 | Robot always says 我现在连不上网络 | Check internet access and `DASHSCOPE_BASE_URL`, then run `--check llm` to see the real error |

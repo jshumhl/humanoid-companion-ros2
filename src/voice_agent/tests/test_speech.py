@@ -1,3 +1,6 @@
+import subprocess
+import threading
+import time
 from pathlib import Path
 
 from voice_agent.speech import SpeechOutput
@@ -80,6 +83,108 @@ def test_say_without_callback_still_speaks(tmp_path):
     speaker = FakeSpeaker()
     SpeechOutput(speaker, tmp_path, timeout_sec=5).say("你好。")
     assert speaker.played == [b"ID3edge"]
+
+
+class FakePlayer:
+    """A player process that keeps running until it is stopped."""
+
+    def __init__(self, ignores_terminate=False):
+        self.terminated = False
+        self.killed = False
+        self._ignores_terminate = ignores_terminate
+
+    def poll(self):
+        return 0 if self.terminated or self.killed else None
+
+    def terminate(self):
+        if not self._ignores_terminate:
+            self.terminated = True
+
+    def kill(self):
+        self.killed = True
+
+    def wait(self, timeout=None):
+        if self.poll() is None:
+            raise subprocess.TimeoutExpired("player", timeout)
+        return 0
+
+
+class PlayingSpeaker(FakeSpeaker):
+    def __init__(self, ignores_terminate=False):
+        super().__init__()
+        self.process = FakePlayer(ignores_terminate)
+        self.started = None
+
+    def start(self, path):
+        self.started = path
+        return self.process
+
+
+def test_playback_stops_within_the_budget(tmp_path):
+    """Interrupting mid-sentence must silence the robot in well under 200 ms."""
+    speaker = PlayingSpeaker()
+    interrupt = threading.Event()
+    threading.Timer(0.03, interrupt.set).start()   # interrupt while it is playing
+
+    started = time.monotonic()
+    result = SpeechOutput(speaker, tmp_path, timeout_sec=5).say("第一句。", interrupt=interrupt)
+
+    assert result.interrupted and not result.spoken
+    assert speaker.process.terminated
+    stop_latency_ms = (result.stopped_at - started) * 1000
+    assert stop_latency_ms < 200
+
+
+def test_player_that_ignores_terminate_is_killed(tmp_path):
+    speaker = PlayingSpeaker(ignores_terminate=True)
+    interrupt = threading.Event()
+    threading.Timer(0.03, interrupt.set).start()
+
+    result = SpeechOutput(speaker, tmp_path, timeout_sec=5).say("第一句。", interrupt=interrupt)
+
+    assert speaker.process.killed
+    assert result.interrupted
+
+
+def test_nothing_is_played_when_the_interrupt_arrives_first(tmp_path):
+    """Already interrupted: start no audio rather than starting and cutting it."""
+    speaker = PlayingSpeaker()
+    interrupt = threading.Event()
+    interrupt.set()
+
+    result = SpeechOutput(speaker, tmp_path, timeout_sec=5).say("第一句。", interrupt=interrupt)
+
+    assert result.interrupted and not result.spoken
+    assert speaker.started is None      # the player was never launched
+
+
+def test_playback_runs_to_the_end_when_not_interrupted(tmp_path):
+    speaker = PlayingSpeaker()
+    speaker.process.terminated = True   # a process that has already finished
+    result = SpeechOutput(speaker, tmp_path, timeout_sec=5).say(
+        "第一句。", interrupt=threading.Event())
+    assert result.spoken and not result.interrupted
+
+
+def test_synthesis_is_abandoned_when_interrupted_first(tmp_path):
+    """A sentence interrupted before its audio exists is never played."""
+    interrupt = threading.Event()
+    release = threading.Event()
+
+    class SlowSpeaker(FakeSpeaker):
+        def synthesize(self, text, path):
+            interrupt.set()
+            release.wait(5)
+            super().synthesize(text, path)
+
+    speaker = SlowSpeaker()
+    try:
+        result = SpeechOutput(speaker, tmp_path, timeout_sec=5).say("第一句。", interrupt=interrupt)
+    finally:
+        release.set()
+
+    assert result.interrupted and not result.spoken
+    assert speaker.played == []
 
 
 def test_provider_tts_failure_falls_back_to_edge_tts(tmp_path):

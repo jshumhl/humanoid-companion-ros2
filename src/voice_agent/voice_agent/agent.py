@@ -10,7 +10,7 @@ from dataclasses import dataclass
 
 from .protocol import ReplyFormatError, ToolCall, clean_spoken, parse_model_output
 from .providers import ProviderUnavailable
-from .timeouts import CallTimeout, call_with_timeout
+from .timeouts import CallCancelled, CallTimeout, call_with_timeout
 from .tools import UnknownTool
 
 log = logging.getLogger(__name__)
@@ -57,7 +57,7 @@ class Agent:
         )
         return (heard or "").strip()
 
-    def respond_to_audio(self, wav_bytes, sample_rate):
+    def respond_to_audio(self, wav_bytes, sample_rate, cancel_event=None):
         try:
             heard = self.transcribe(wav_bytes, sample_rate)
         except (ProviderUnavailable, CallTimeout) as e:
@@ -69,12 +69,12 @@ class Agent:
 
         if not heard:
             return self.fallback("not_heard")
-        reply = self.respond_to_text(heard)
+        reply = self.respond_to_text(heard, cancel_event)
         return Reply(reply.text, heard=heard, tool=reply.tool, fallback=reply.fallback,
                      gesture=reply.gesture)
 
-    def respond_to_text(self, text):
-        reply = self._respond_to_text(text)
+    def respond_to_text(self, text, cancel_event=None):
+        reply = self._respond_to_text(text, cancel_event)
         # Every turn is recorded, gesture or not: what needs tuning is how
         # often a gesture is chosen at all, and for which utterances.
         if self._gesture_log is not None and text.strip():
@@ -82,7 +82,7 @@ class Agent:
                                      reply.tool, reply.fallback)
         return reply
 
-    def _respond_to_text(self, text):
+    def _respond_to_text(self, text, cancel_event=None):
         text = text.strip()
         if not text:
             return self.fallback("not_heard")
@@ -92,7 +92,11 @@ class Agent:
                     {"role": "user", "content": text}]
         try:
             raw = call_with_timeout(self._provider.chat, self._timeouts.llm_sec,
-                                    messages, self._timeouts.llm_sec)
+                                    messages, self._timeouts.llm_sec,
+                                    cancel_event=cancel_event)
+        except CallCancelled:
+            log.info("Model call abandoned: the person interrupted")
+            raise
         except (ProviderUnavailable, CallTimeout) as e:
             self._note_error("LLM unavailable", e)
             return self.fallback("offline")
@@ -108,9 +112,9 @@ class Agent:
             return self.fallback("error")
 
         if isinstance(action, ToolCall):
-            return self._run_tool(text, action)
+            return self._run_tool(text, action, cancel_event)
 
-        spoken = clean_spoken(action.text, self._config.conversation.max_reply_sentences)
+        spoken = clean_spoken(action.text)
         if not spoken:
             log.warning("Model reply was empty after cleanup: %r", raw)
             return self.fallback("error")
@@ -126,9 +130,13 @@ class Agent:
             return ""
         return name
 
-    def _run_tool(self, user_text, call):
+    def _run_tool(self, user_text, call, cancel_event=None):
         try:
-            result = call_with_timeout(self._tools.dispatch, self._timeouts.tool_sec, call)
+            result = call_with_timeout(self._tools.dispatch, self._timeouts.tool_sec, call,
+                                       cancel_event=cancel_event)
+        except CallCancelled:
+            log.info("Tool %s abandoned: the person interrupted", call.name)
+            raise
         except UnknownTool:
             log.warning("Model asked for unknown tool %r", call.name)
             return self.fallback("error")
@@ -153,6 +161,20 @@ class Agent:
         max_messages = 2 * self._config.conversation.max_history_turns
         if len(self._history) > max_messages:
             del self._history[:len(self._history) - max_messages]
+
+    def mark_last_reply_interrupted(self, spoken):
+        """Record that the person only heard part of the last reply.
+
+        The model would otherwise assume everything it said was heard, and
+        answer follow-up questions as though the cut-off part had landed.
+        """
+        for message in reversed(self._history):
+            if message["role"] != "assistant":
+                continue
+            message["content"] = json.dumps(
+                {"say": spoken, "interrupted": True, "note": "用户打断了这句话，后面的内容没有说完"},
+                ensure_ascii=False)
+            return
 
     def _note_error(self, what, error):
         self.last_error = f"{what}: {error}"

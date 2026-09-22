@@ -35,7 +35,7 @@ DELETE = object()
 def test_shipped_config_loads():
     config = load_config(SHIPPED_CONFIG)
     assert config.narrator.language == "zh-CN"
-    assert config.audio.vad.enabled is False
+    assert config.listening.mode == "push_to_talk"
     assert config.speech_output.engine == "edge-tts"
     assert "{tools}" in config.system_prompt
     assert [o.action for o in config.offline_menu.options] == ["settings", "retry", "quit"]
@@ -96,9 +96,16 @@ def test_device_name_allowed(tmp_path):
     ({"audio__sample_rat": 16000}, "Unknown key(s) audio.sample_rat"),
     ({"speaker": "x"}, "Unknown key(s) speaker"),
     ({"audio__sample_rate": "16k"}, "audio.sample_rate must be int"),
-    ({"audio__vad__enabled": "yes"}, "audio.vad.enabled must be bool"),
+    ({"listening__mode": "shouting"}, "listening.mode must be one of push_to_talk, always_on"),
+    ({"listening__interrupt_ms": 10}, "listening.interrupt_ms must be >= 30"),
+    ({"listening__playback_poll_ms": 500}, "listening.playback_poll_ms must be between"),
+    ({"conversation__continue_prompt": " "}, "conversation.continue_prompt must not be empty"),
+    ({"conversation__continue_words": []}, "conversation.continue_words must be"),
+    ({"conversation__continue_words": ["好", " "]}, "conversation.continue_words must be"),
+    ({"conversation__continue_words": "好"}, "conversation.continue_words must be a list"),
     ({"audio__max_record_sec": 0}, "audio.max_record_sec must be > 0"),
-    ({"audio__vad__enabled": True, "audio__sample_rate": 22050}, "when audio.vad.enabled is true"),
+    ({"listening__mode": "always_on", "audio__sample_rate": 22050},
+     "when listening.mode is always_on"),
     ({"audio__vad__aggressiveness": 5}, "aggressiveness must be 0, 1, 2 or 3"),
     ({"audio__input_device": 1.5}, "audio.input_device must be int or str or null"),
     ({"speech_output__engine": "espeak"}, "speech_output.engine must be one of"),

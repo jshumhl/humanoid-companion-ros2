@@ -14,6 +14,7 @@ The steps run one after another in a single thread, and each turn prints what
 was heard and what was said.
 
 - Runs on CPU, Python 3.10+, no ROS. It has a `COLCON_IGNORE` file, like `object_narrator`.
+- Push-to-talk or always-on listening, and you can cut the robot off mid-sentence.
 - The backend is chosen with `LLM_PROVIDER`. The first adapter is DashScope:
   `qwen-plus-character` for chat and `qwen-audio-3.0-asr-flash` for speech recognition.
 - Tool calls use our own JSON reply format, parsed locally, so provider-specific
@@ -84,7 +85,8 @@ option. The main ones:
 |---|---|---|
 | `narrator_config` | `../object_narrator/config.yaml` | Shared camera `source`, `language`, edge-tts `voice` and `player` |
 | `audio.input_device` | `null` | Microphone index or name (`--list-devices`) |
-| `audio.vad.enabled` | `false` | Voice activity detection instead of push-to-talk (`pip install webrtcvad-wheels`) |
+| `listening.mode` | `push_to_talk` | `always_on` listens continuously and allows spoken interruption (below) |
+| `conversation.max_reply_sentences` | `3` | Sentences spoken before asking 还要继续吗 |
 | `local_asr.model_path` | `~/.cache/voice_agent/vosk-model-small-cn-0.22` | Offline recognizer for menu answers (SETUP.md step 4) |
 | `speech_output.engine` | `edge-tts` | `provider` tries the provider's TTS first, then falls back to edge-tts |
 | `timeouts.*_sec` | 15–20 | Longest wait for ASR, LLM, TTS or a tool before using a fallback phrase |
@@ -219,6 +221,68 @@ Tool(name="what_time", signature="what_time()",
 
 The tool list in the system prompt is generated from the registry, so no prompt
 edit is needed unless the model needs guidance on when to use the tool.
+
+## Listening and interruption
+
+```yaml
+listening:
+  mode: push_to_talk   # push_to_talk | always_on
+  interrupt_ms: 300    # always_on: speech this long during playback interrupts
+  playback_poll_ms: 20 # how often playback checks whether to stop
+```
+
+| Mode | Listening | Interrupting |
+|---|---|---|
+| `push_to_talk` (default) | Enter starts recording, Enter stops it | Enter while the robot speaks |
+| `always_on` | VAD finds each utterance (`pip install webrtcvad-wheels`) | Enter, or speaking for `interrupt_ms` during playback |
+
+**An interruption stops the audio, abandons the rest of the reply, and hands
+the turn back.** The robot never resumes an interrupted sentence: by the time
+it could, the person has moved on. Measured with the real player, playback
+goes silent 16–23 ms after the interrupt; anything over 200 ms is logged as a
+warning.
+
+```
+INFO voice_agent.delivery: Interrupted by enter after 12 characters; playback stopped in 18 ms
+```
+
+The watcher is armed for the whole turn, the model call included, so
+interrupting while the robot is still thinking abandons the request instead of
+waiting for an answer nobody wants. The HTTP call may still finish in its own
+thread — a blocking socket read cannot be cancelled from outside — but its
+result is discarded and never spoken.
+
+Conversation history records what was actually heard:
+
+```json
+{"say": "我是巴克机器人。", "interrupted": true, "note": "用户打断了这句话，后面的内容没有说完"}
+```
+
+Without it the model assumes its whole reply landed, and answers follow-up
+questions about things the person never heard.
+
+**Echo:** in `always_on` mode the microphone hears the robot's own speaker,
+and there is no echo cancellation here. `interrupt_ms` is the defence: a
+syllable of its own voice is ignored, sustained speech is not. On a robot
+whose microphone hears its speaker clearly, raise `interrupt_ms` or use
+push-to-talk.
+
+### Length guard
+
+A reply longer than `conversation.max_reply_sentences` (3) is not delivered as
+a monologue. The robot speaks that many sentences, asks `continue_prompt`, and
+waits:
+
+```
+你：请用五句话讲讲你自己
+巴克：我是巴克机器人。我是一个人形陪伴机器人，专门来陪大家聊天的。我虽然不能像人类一样吃饭睡觉，但我可以一直陪在你身边。
+巴克：还要继续吗？
+你：继续
+巴克：如果你好奇周围有什么，我还能用眼睛帮你看看。很高兴能成为你的朋友！
+```
+
+The rest is spoken only if the answer contains one of
+`conversation.continue_words`; any other reply drops it and starts a new turn.
 
 ## Gestures
 
@@ -407,6 +471,8 @@ microphone or camera. Use `--check` for those.
 |---|---|
 | `voice_agent/__main__.py` | CLI, push-to-talk / VAD / text loops |
 | `voice_agent/agent.py` | One turn: ASR → LLM → parse → tool → reply; history; fallbacks |
+| `voice_agent/delivery.py` | Speaking a reply: sentence by sentence, stoppable, length guard |
+| `voice_agent/interrupt.py` | Enter and sustained-speech interrupt sources |
 | `voice_agent/protocol.py` | JSON reply schema parsing, spoken-text cleanup |
 | `voice_agent/menu.py` | Offline menu: keyword/number matching and attempt limit |
 | `voice_agent/local_asr.py` | Offline recognition of menu answers (Vosk, grammar from the options) |

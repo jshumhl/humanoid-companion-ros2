@@ -2,8 +2,11 @@ import json
 import logging
 import threading
 
+import pytest
+
 from voice_agent.agent import Agent
 from voice_agent.providers import ProviderError, ProviderUnavailable
+from voice_agent.timeouts import CallCancelled
 from voice_agent.tools import Tool, ToolRegistry, look_around_tool
 
 SCENE = "我看到了两个人和一把椅子。"
@@ -146,9 +149,44 @@ def test_history_is_trimmed(config, fake_provider):
     assert agent.history[0]["content"] == "第3句"
 
 
-def test_long_reply_cut_to_max_sentences(config, fake_provider):
+def test_long_reply_is_kept_whole_for_the_delivery_layer(config, fake_provider):
+    """The agent no longer truncates: delivery speaks N sentences, then asks."""
     provider = fake_provider(['{"say": "一。二。三。四。五。"}'])
-    assert make_agent(config, provider).respond_to_text("讲个故事").text == "一。二。三。"
+    assert make_agent(config, provider).respond_to_text("讲个故事").text == "一。二。三。四。五。"
+
+
+def test_interrupted_reply_is_marked_in_history(config, fake_provider):
+    provider = fake_provider(['{"say": "第一句。第二句。第三句。"}', '{"say": "好的。"}'])
+    agent = make_agent(config, provider)
+    agent.respond_to_text("讲个故事")
+
+    agent.mark_last_reply_interrupted("第一句。")
+
+    assistant = json.loads(agent.history[1]["content"])
+    assert assistant["say"] == "第一句。"       # only what the person heard
+    assert assistant["interrupted"] is True
+
+    # The model sees the truncation on the next turn.
+    agent.respond_to_text("刚才你说什么？")
+    assert json.loads(provider.chat_calls[1][2]["content"])["interrupted"] is True
+
+
+def test_cancelled_model_call_propagates(config, fake_provider):
+    """An interruption during the model call abandons the turn instead of speaking."""
+    cancel = threading.Event()
+    release = threading.Event()
+
+    def slow():
+        cancel.set()
+        release.wait(5)
+        return '{"say": "太晚了。"}'
+
+    provider = fake_provider([slow])
+    try:
+        with pytest.raises(CallCancelled):
+            make_agent(config, provider).respond_to_text("你是谁？", cancel)
+    finally:
+        release.set()
 
 
 def test_offline_uses_fallback_and_keeps_history_clean(config, fake_provider):

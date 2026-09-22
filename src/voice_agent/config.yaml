@@ -8,6 +8,20 @@
 # are shared with object_narrator. Path is relative to this file.
 narrator_config: ../object_narrator/config.yaml
 
+# How the robot listens, and how you stop it when it is talking.
+#   push_to_talk  Enter starts and stops recording. Enter also stops speech.
+#   always_on     it listens continuously (needs webrtcvad), and speech during
+#                 playback interrupts it. Enter still works.
+listening:
+  mode: push_to_talk
+  # always_on: speech must last this long during playback to count as an
+  # interruption. Short bursts (including the robot hearing itself, since
+  # there is no echo cancellation) are ignored.
+  interrupt_ms: 300
+  # How often playback checks whether it should stop. The robot goes quiet
+  # within roughly this long plus the player's own exit time.
+  playback_poll_ms: 20
+
 audio:
   # Microphone: sounddevice index or name; null = system default input.
   # List devices with: python -m voice_agent --list-devices
@@ -16,10 +30,9 @@ audio:
   max_record_sec: 20       # recording is cut off after this
   min_record_sec: 0.3      # shorter recordings are treated as "not heard"
 
-  # Voice activity detection instead of push-to-talk. Needs:
-  #   pip install webrtcvad-wheels
+  # Voice activity detection, used by always_on listening and by voice
+  # interruption. Needs: pip install webrtcvad-wheels
   vad:
-    enabled: false
     aggressiveness: 2      # 0-3; higher filters more background noise
     silence_ms: 800        # this much silence ends an utterance
     start_timeout_sec: 10  # stop waiting if nobody speaks
@@ -48,7 +61,12 @@ timeouts:                  # seconds; a slower call counts as "offline"
 
 conversation:
   max_history_turns: 10    # user/assistant pairs kept as context
-  max_reply_sentences: 3   # longer model replies are cut to this
+  # A reply longer than this stops after this many sentences and asks
+  # continue_prompt; the rest is spoken only if the answer contains one of
+  # continue_words, and dropped otherwise.
+  max_reply_sentences: 3
+  continue_prompt: 还要继续吗？
+  continue_words: [继续, 要, 好, 嗯, 是, 说吧, 对]
 
 # Gestures the model may attach to a reply, e.g.
 #   {"say": "你好，我是巴克机器人。", "gesture": "hello"}
