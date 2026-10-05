@@ -1,6 +1,8 @@
 import pytest
 
-from voice_agent.protocol import ReplyFormatError, Say, ToolCall, clean_spoken, parse_model_output
+from voice_agent.protocol import (
+    ReplyFormatError, Say, ToolCall, clean_spoken, parse_model_output, split_sentences,
+)
 
 
 @pytest.mark.parametrize("raw, expected", [
@@ -45,18 +47,26 @@ def test_parse_invalid(raw):
         parse_model_output(raw)
 
 
-def test_clean_spoken_caps_sentences():
+def test_clean_spoken_keeps_the_whole_reply():
+    """Trimming is the delivery layer's job now: it speaks N sentences, then asks."""
     text = "第一句。第二句！第三句？第四句。"
-    assert clean_spoken(text, 3) == "第一句。第二句！第三句？"
+    assert clean_spoken(text) == text
 
 
 def test_clean_spoken_strips_markdown_and_emoji():
-    assert clean_spoken("**我是** 巴克机器人 😊。", 3) == "我是 巴克机器人。"
-
-
-def test_clean_spoken_keeps_unterminated_last_sentence():
-    assert clean_spoken("你好。很高兴见到你", 3) == "你好。很高兴见到你"
+    assert clean_spoken("**我是** 巴克机器人 😊。") == "我是 巴克机器人。"
 
 
 def test_clean_spoken_empty():
-    assert clean_spoken("**  **", 3) == ""
+    assert clean_spoken("**  **") == ""
+
+
+@pytest.mark.parametrize("text, expected", [
+    ("第一句。第二句！第三句？", ["第一句。", "第二句！", "第三句？"]),
+    ("你好。很高兴见到你", ["你好。", "很高兴见到你"]),   # unterminated tail is kept
+    ("只有一句话。", ["只有一句话。"]),
+    ("", []),
+    ("   ", []),
+])
+def test_split_sentences(text, expected):
+    assert split_sentences(text) == expected

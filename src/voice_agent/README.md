@@ -14,11 +14,13 @@ The steps run one after another in a single thread, and each turn prints what
 was heard and what was said.
 
 - Runs on CPU, Python 3.10+, no ROS. It has a `COLCON_IGNORE` file, like `object_narrator`.
+- Push-to-talk or always-on listening, and you can cut the robot off mid-sentence.
 - The backend is chosen with `LLM_PROVIDER`. The first adapter is DashScope:
   `qwen-plus-character` for chat and `qwen-audio-3.0-asr-flash` for speech recognition.
 - Tool calls use our own JSON reply format, parsed locally, so provider-specific
   tool-calling APIs aren't needed.
-- Speech output uses `object_narrator`'s edge-tts `Speaker`.
+- Speech output uses `object_narrator`'s edge-tts `Speaker`, the provider's TTS,
+  or the robot's own offline TTS service (`speech_output.engine`).
 - The agent never speaks an error. Failures map to fixed, friendly phrases, and
   the technical detail goes to the terminal log.
 
@@ -67,11 +69,11 @@ python -m voice_agent --config my.yaml   # another config file
 ## Configuration
 
 **Secrets go in the environment, never in `config.yaml`.** The CLI reads a
-`.env` file. It looks in the current directory and its parents first, then in
-the config file's directory and its parents.
+`.env` file. It looks beside the config file and in its parents first, then in
+the current directory and its parents, so a deployment's own `.env` wins.
 
 ```bash
-# .env at the repository root (already in .gitignore)
+# .env beside config.yaml or at the repository root (keep it out of git)
 LLM_PROVIDER=dashscope
 DASHSCOPE_API_KEY=sk-...
 DASHSCOPE_BASE_URL=https://dashscope-intl.aliyuncs.com/api/v1   # optional, see SETUP.md
@@ -82,11 +84,14 @@ option. The main ones:
 
 | Key | Default | Meaning |
 |---|---|---|
-| `narrator_config` | `../object_narrator/config.yaml` | Shared camera `source`, `language`, edge-tts `voice` and `player` |
+| `narrator_config` | `narrator.yaml` | Shared camera `source`, `language`, edge-tts `voice` and `player` |
 | `audio.input_device` | `null` | Microphone index or name (`--list-devices`) |
-| `audio.vad.enabled` | `false` | Voice activity detection instead of push-to-talk (`pip install webrtcvad-wheels`) |
+| `listening.mode` | `push_to_talk` | `always_on` listens continuously and allows spoken interruption (below) |
+| `conversation.max_reply_sentences` | `3` | Sentences spoken before asking 还要继续吗 |
 | `local_asr.model_path` | `~/.cache/voice_agent/vosk-model-small-cn-0.22` | Offline recognizer for menu answers (SETUP.md step 4) |
-| `speech_output.engine` | `edge-tts` | `provider` tries the provider's TTS first, then falls back to edge-tts |
+| `speech_output.engine` | `edge-tts` | `provider` tries the provider's TTS first, then falls back to edge-tts. `ros2` speaks through the robot's offline TTS service |
+| `speech_output.ros2.service`, `.type` | empty | The robot's TTS service name and type (`pkg/srv/Name`); required for `ros2` |
+| `speech_output.ros2.text_field` | `text` | Request field that carries the text; `request` sets any other fields, `max_chars` caps the length |
 | `timeouts.*_sec` | 15–20 | Longest wait for ASR, LLM, TTS or a tool before using a fallback phrase |
 | `conversation.max_history_turns` | `10` | Past exchanges sent with each request |
 | `providers.dashscope.*` | see file | Model names |
@@ -193,7 +198,9 @@ Each network call and tool call has a hard time limit, so the loop can't hang.
 Fallback phrases are turned into audio at startup and cached in
 `~/.cache/voice_agent/tts`. Once the agent has run online once, it can still
 say them with the network down. Any other reply needs the network, because
-edge-tts is an online service. If a reply can't be spoken, it is still printed.
+edge-tts is an online service. With `speech_output.engine: ros2` every reply can
+be spoken offline, since the robot synthesizes speech itself. If a reply can't
+be spoken, it is still printed.
 
 ## Reply format and tools
 
@@ -219,6 +226,81 @@ Tool(name="what_time", signature="what_time()",
 
 The tool list in the system prompt is generated from the registry, so no prompt
 edit is needed unless the model needs guidance on when to use the tool.
+
+## Listening and interruption
+
+```yaml
+listening:
+  mode: push_to_talk   # push_to_talk | always_on
+  interrupt_ms: 300    # always_on: speech this long during playback interrupts
+  playback_poll_ms: 20 # how often playback checks whether to stop
+```
+
+| Mode | Listening | Interrupting |
+|---|---|---|
+| `push_to_talk` (default) | Enter starts recording, Enter stops it | Enter while the robot speaks |
+| `always_on` | VAD finds each utterance (`pip install webrtcvad-wheels`) | Enter, or speaking for `interrupt_ms` during playback |
+
+**An interruption stops the audio, abandons the rest of the reply, and hands
+the turn back.** The robot never resumes an interrupted sentence: by the time
+it could, the person has moved on. Measured with the real player, playback
+goes silent 16–23 ms after the interrupt; anything over 200 ms is logged as a
+warning.
+
+With `speech_output.engine: ros2`, the robot's TTS service plays each reply
+itself and cannot be stopped once it starts. An interruption then takes effect
+when the robot finishes what it is saying, at most `max_reply_sentences`
+sentences; the rest of the turn is dropped as usual, and the logged stop
+latency is the real time until the robot went quiet.
+
+A reply is spoken as a single piece of audio rather than sentence by sentence.
+Splitting it sounded wrong: each playback reopens the audio device, which added
+0.2–1.0 s of silence at every 。 Interruption does not need the split, since
+the player can be stopped mid-word. What is held back by the length guard is
+synthesized while the first part plays, so 继续 starts speaking at once.
+
+```
+INFO voice_agent.delivery: Interrupted by enter after 12 characters; playback stopped in 18 ms
+```
+
+The watcher is armed for the whole turn, the model call included, so
+interrupting while the robot is still thinking abandons the request instead of
+waiting for an answer nobody wants. The HTTP call may still finish in its own
+thread — a blocking socket read cannot be cancelled from outside — but its
+result is discarded and never spoken.
+
+Conversation history records roughly what was actually heard, estimated from
+how long the audio played:
+
+```json
+{"say": "我是巴克机器人。", "interrupted": true, "note": "用户打断了这句话，后面的内容没有说完"}
+```
+
+Without it the model assumes its whole reply landed, and answers follow-up
+questions about things the person never heard.
+
+**Echo:** in `always_on` mode the microphone hears the robot's own speaker,
+and there is no echo cancellation here. `interrupt_ms` is the defence: a
+syllable of its own voice is ignored, sustained speech is not. On a robot
+whose microphone hears its speaker clearly, raise `interrupt_ms` or use
+push-to-talk.
+
+### Length guard
+
+A reply longer than `conversation.max_reply_sentences` (3) is not delivered as
+a monologue. The robot speaks that many sentences, asks `continue_prompt`, and
+waits:
+
+```
+你：请用五句话讲讲你自己
+巴克：我是巴克机器人。我是一个人形陪伴机器人，专门来陪大家聊天的。我虽然不能像人类一样吃饭睡觉，但我可以一直陪在你身边。
+巴克：还要继续吗？
+你：继续
+巴克：如果你好奇周围有什么，我还能用眼睛帮你看看。很高兴能成为你的朋友！
+```
+
+The rest is spoken only if the answer contains one of
+`conversation.continue_words`; any other reply drops it and starts a new turn.
 
 ## Gestures
 
@@ -396,7 +478,8 @@ camera-failure cases), the offline menu (keyword and number answers, failed
 attempts, `[unk]` handling), the Vosk grammar built from the options, gestures
 (catalogue validation, skipping while one plays, backend fallback, firing at
 playback start), config validation, provider selection, ASR response parsing,
-the speech cache, and VAD segmentation. They need no network, microphone, Vosk
+the speech cache, the robot TTS engine against a fake service, `.env` lookup
+order, and VAD segmentation. They need no network, microphone, Vosk
 model or ROS: the ROS 2 tests skip themselves when `rclpy` is missing, and the
 recognizer itself is covered by `--check local-asr`. They need no network,
 microphone or camera. Use `--check` for those.
@@ -407,6 +490,8 @@ microphone or camera. Use `--check` for those.
 |---|---|
 | `voice_agent/__main__.py` | CLI, push-to-talk / VAD / text loops |
 | `voice_agent/agent.py` | One turn: ASR → LLM → parse → tool → reply; history; fallbacks |
+| `voice_agent/delivery.py` | Speaking a reply: stoppable playback, length guard, continuations |
+| `voice_agent/interrupt.py` | Enter and sustained-speech interrupt sources |
 | `voice_agent/protocol.py` | JSON reply schema parsing, spoken-text cleanup |
 | `voice_agent/menu.py` | Offline menu: keyword/number matching and attempt limit |
 | `voice_agent/local_asr.py` | Offline recognition of menu answers (Vosk, grammar from the options) |
@@ -414,8 +499,10 @@ microphone or camera. Use `--check` for those.
 | `voice_agent/gestures.py` | Gesture catalogue and prompt section, skip-while-playing, stub and ROS 2 backends |
 | `voice_agent/gesture_log.py` | Rotating per-turn record of chosen gestures |
 | `gestures.yaml` | The catalogue itself: names, `use_when`, durations, few-shot examples |
+| `narrator.yaml` | Camera source, language, edge-tts voice and player (object_narrator format) |
 | `voice_agent/audio.py` | Microphone capture (push-to-talk, webrtcvad), WAV encoding |
 | `voice_agent/speech.py` | TTS with offline phrase cache, playback via `object_narrator` |
+| `voice_agent/robot_tts.py` | Speech through the robot's TTS service (`speech_output.engine: ros2`) |
 | `voice_agent/config.py` | Config dataclasses and validation |
 | `voice_agent/checks.py` | `--check` component tests |
 | `voice_agent/timeouts.py` | Hard time limit for blocking calls |

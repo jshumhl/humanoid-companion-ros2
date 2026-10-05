@@ -5,6 +5,7 @@ they come from the object_narrator config that `narrator_config` points to.
 """
 
 import dataclasses
+import re
 import types
 import typing
 from dataclasses import dataclass, field
@@ -20,7 +21,8 @@ class ConfigError(ValueError):
 
 @dataclass
 class VadConfig:
-    enabled: bool = False
+    """Tuning for always_on listening and for voice interruption."""
+
     aggressiveness: int = 2          # 0 (least) to 3 (most aggressive filtering)
     silence_ms: int = 800            # trailing silence that ends an utterance
     start_timeout_sec: float = 10.0  # give up if nobody speaks for this long
@@ -36,6 +38,13 @@ class AudioConfig:
 
 
 @dataclass
+class ListeningConfig:
+    mode: str = "push_to_talk"      # push_to_talk | always_on
+    interrupt_ms: int = 300         # always_on: speech this long during playback interrupts
+    playback_poll_ms: int = 20      # how often playback checks for an interrupt
+
+
+@dataclass
 class LocalAsrConfig:
     """Offline recognizer used only for offline-menu answers."""
 
@@ -44,9 +53,21 @@ class LocalAsrConfig:
 
 
 @dataclass
+class RobotTtsConfig:
+    """A ROS 2 TTS service that plays text on the robot's speaker (engine: ros2)."""
+
+    service: str = ""                # service name, e.g. /tts/speak
+    type: str = ""                   # service type, e.g. my_interfaces/srv/Speak
+    text_field: str = "text"         # request field that carries the text
+    request: dict = field(default_factory=dict)  # other request fields, sent as given
+    max_chars: int = 600             # longer text is cut to this before it is sent
+
+
+@dataclass
 class SpeechOutputConfig:
-    engine: str = "edge-tts"         # edge-tts | provider
+    engine: str = "edge-tts"         # edge-tts | provider | ros2
     cache_dir: str = "~/.cache/voice_agent/tts"
+    ros2: RobotTtsConfig = field(default_factory=RobotTtsConfig)
 
 
 @dataclass
@@ -60,7 +81,10 @@ class TimeoutConfig:
 @dataclass
 class ConversationConfig:
     max_history_turns: int = 10
-    max_reply_sentences: int = 3
+    max_reply_sentences: int = 3       # sentences spoken before asking to continue
+    continue_prompt: str = "还要继续吗？"
+    continue_words: List[str] = field(
+        default_factory=lambda: ["继续", "要", "好", "嗯", "是", "说吧", "对"])
 
 
 @dataclass
@@ -107,8 +131,9 @@ class FallbackPhrases:
 @dataclass
 class Config:
     system_prompt: str
-    narrator_config: str = "../object_narrator/config.yaml"
+    narrator_config: str = "narrator.yaml"
     audio: AudioConfig = field(default_factory=AudioConfig)
+    listening: ListeningConfig = field(default_factory=ListeningConfig)
     local_asr: LocalAsrConfig = field(default_factory=LocalAsrConfig)
     speech_output: SpeechOutputConfig = field(default_factory=SpeechOutputConfig)
     timeouts: TimeoutConfig = field(default_factory=TimeoutConfig)
@@ -123,9 +148,12 @@ class Config:
     gesture_catalogue: object = field(default=None, repr=False)
 
 
-SPEECH_ENGINES = ("edge-tts", "provider")
+SPEECH_ENGINES = ("edge-tts", "provider", "ros2")
+ROS2_SERVICE_NAME = re.compile(r"(/[A-Za-z_][A-Za-z0-9_]*)+")
+ROS2_SERVICE_TYPE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*/srv/[A-Za-z_][A-Za-z0-9_]*")
 VAD_SAMPLE_RATES = (8000, 16000, 32000, 48000)
 MENU_ACTIONS = ("settings", "retry", "quit")
+LISTENING_MODES = ("push_to_talk", "always_on")
 LOCAL_ASR_SAMPLE_RATE = 16000
 GESTURE_BACKENDS = ("stub", "ros2")
 # Loaded from other files by load_config, never read from config.yaml itself.
@@ -169,9 +197,18 @@ def validate(config):
     _require(0 <= vad.aggressiveness <= 3, "audio.vad.aggressiveness must be 0, 1, 2 or 3")
     _require(vad.silence_ms >= 100, "audio.vad.silence_ms must be >= 100")
     _require(vad.start_timeout_sec > 0, "audio.vad.start_timeout_sec must be > 0")
-    if vad.enabled:
+
+    listening = config.listening
+    _require(listening.mode in LISTENING_MODES,
+             f"listening.mode must be one of {', '.join(LISTENING_MODES)}, got {listening.mode!r}")
+    _require(listening.interrupt_ms >= 30,
+             "listening.interrupt_ms must be >= 30 (one VAD frame)")
+    _require(0 < listening.playback_poll_ms <= 200,
+             "listening.playback_poll_ms must be between 1 and 200, so playback stops promptly")
+    if listening.mode == "always_on":
         _require(audio.sample_rate in VAD_SAMPLE_RATES,
-                 f"audio.sample_rate must be one of {VAD_SAMPLE_RATES} when audio.vad.enabled is true")
+                 f"audio.sample_rate must be one of {VAD_SAMPLE_RATES} when "
+                 f"listening.mode is always_on")
 
     if config.local_asr.enabled:
         _require(config.local_asr.model_path.strip() != "",
@@ -183,12 +220,19 @@ def validate(config):
     _require(config.speech_output.engine in SPEECH_ENGINES,
              f"speech_output.engine must be one of {', '.join(SPEECH_ENGINES)}, "
              f"got {config.speech_output.engine!r}")
+    _validate_robot_tts(config.speech_output)
 
     for f in dataclasses.fields(TimeoutConfig):
         _require(getattr(config.timeouts, f.name) > 0, f"timeouts.{f.name} must be > 0")
 
-    _require(config.conversation.max_history_turns >= 0, "conversation.max_history_turns must be >= 0")
-    _require(config.conversation.max_reply_sentences >= 1, "conversation.max_reply_sentences must be >= 1")
+    conversation = config.conversation
+    _require(conversation.max_history_turns >= 0, "conversation.max_history_turns must be >= 0")
+    _require(conversation.max_reply_sentences >= 1, "conversation.max_reply_sentences must be >= 1")
+    _require(conversation.continue_prompt.strip() != "",
+             "conversation.continue_prompt must not be empty")
+    _require(bool(conversation.continue_words) and
+             all(word.strip() for word in conversation.continue_words),
+             "conversation.continue_words must be a non-empty list of non-empty words")
 
     _require(config.system_prompt.strip() != "", "system_prompt must not be empty")
     _require("{tools}" in config.system_prompt,
@@ -204,6 +248,27 @@ def validate(config):
                  f"providers.{name} must be a mapping")
 
     _validate_menu(config.offline_menu)
+
+
+def _validate_robot_tts(speech_output):
+    robot_tts = speech_output.ros2
+    _require(robot_tts.max_chars > 0, "speech_output.ros2.max_chars must be > 0")
+    for name in robot_tts.request:
+        _require(isinstance(name, str) and name.isidentifier(),
+                 f"speech_output.ros2.request keys must be field names, got {name!r}")
+    _require(robot_tts.text_field.isidentifier(),
+             f"speech_output.ros2.text_field must be a field name, got {robot_tts.text_field!r}")
+    _require(robot_tts.text_field not in robot_tts.request,
+             f"speech_output.ros2.request must not set {robot_tts.text_field!r}, "
+             f"which carries the text")
+    if speech_output.engine != "ros2":
+        return
+    _require(ROS2_SERVICE_NAME.fullmatch(robot_tts.service) is not None,
+             f"speech_output.ros2.service must be a ROS 2 service name like /tts/speak "
+             f"when speech_output.engine is ros2, got {robot_tts.service!r}")
+    _require(ROS2_SERVICE_TYPE.fullmatch(robot_tts.type) is not None,
+             f"speech_output.ros2.type must look like my_interfaces/srv/Speak "
+             f"when speech_output.engine is ros2, got {robot_tts.type!r}")
 
 
 def _validate_gestures(gestures, system_prompt):
@@ -324,6 +389,11 @@ def _dataclass_list_item(expected):
 
 def _check_type(value, expected, key):
     origin = typing.get_origin(expected)
+    if origin is list:
+        if not isinstance(value, list):
+            raise ConfigError(f"{key} must be a list, got {value!r}")
+        (item_type,) = typing.get_args(expected) or (object,)
+        return [_check_type(item, item_type, f"{key}[{i}]") for i, item in enumerate(value)]
     if origin in (Union, types.UnionType):
         options = typing.get_args(expected)
         for option in options:

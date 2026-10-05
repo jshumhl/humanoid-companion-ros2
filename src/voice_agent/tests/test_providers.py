@@ -3,7 +3,7 @@ import re
 import pytest
 
 from voice_agent.providers import (
-    REGISTRY, ProviderConfigError, ProviderUnavailable, create_provider,
+    REGISTRY, ProviderConfigError, ProviderError, ProviderUnavailable, create_provider,
 )
 from voice_agent.providers.dashscope import DashScopeProvider, extract_transcript
 
@@ -72,3 +72,72 @@ def test_no_vendor_imports_outside_providers():
     ]
     assert offenders == []
     assert set(REGISTRY) == {"dashscope"}
+
+
+# --- keeping the key and provider internals out of errors ---
+
+@pytest.mark.parametrize("url", [
+    "http://dashscope.aliyuncs.com/api/v1",                 # not HTTPS
+    "https://user:secret@dashscope.aliyuncs.com/api/v1",    # credentials in the URL
+    "https://dashscope.aliyuncs.com/api/v1?key=secret",     # query string
+    "https://dashscope.aliyuncs.com/api/v1#frag",           # fragment
+])
+def test_dashscope_rejects_unsafe_base_urls(monkeypatch, url):
+    monkeypatch.setenv("DASHSCOPE_API_KEY", "test-key")
+    monkeypatch.setenv("DASHSCOPE_BASE_URL", url)
+    with pytest.raises(ProviderConfigError) as excinfo:
+        DashScopeProvider({})
+    assert "secret" not in str(excinfo.value)
+
+
+class FakeHttpResponse:
+    def __init__(self, status_code, json_body=None, text=""):
+        self.status_code = status_code
+        self._json = json_body
+        self.text = text
+
+    def json(self):
+        if self._json is None:
+            raise ValueError("not JSON")
+        return self._json
+
+
+def make_dashscope(monkeypatch, response):
+    monkeypatch.setenv("DASHSCOPE_API_KEY", "test-key")
+    monkeypatch.delenv("DASHSCOPE_BASE_URL", raising=False)
+    provider = DashScopeProvider({})
+    calls = []
+
+    def post(url, **kwargs):
+        calls.append(kwargs)
+        return response
+
+    monkeypatch.setattr(provider._session, "post", post)
+    return provider, calls
+
+
+def test_dashscope_error_shows_code_and_message_not_the_body(monkeypatch):
+    body = {"code": "InvalidApiKey", "message": "Invalid API-key provided.",
+            "request_id": "abc-123", "echo": "SENSITIVE"}
+    provider, _ = make_dashscope(monkeypatch, FakeHttpResponse(401, body, text=str(body)))
+    with pytest.raises(ProviderError) as excinfo:
+        provider.chat([{"role": "user", "content": "你好"}], timeout_sec=5)
+    message = str(excinfo.value)
+    assert "HTTP 401" in message and "InvalidApiKey" in message and "abc-123" in message
+    assert "SENSITIVE" not in message
+
+
+def test_dashscope_non_json_error_is_reduced_to_status(monkeypatch):
+    page = "<html><body>502 Bad Gateway nginx internal-host-01</body></html>"
+    provider, _ = make_dashscope(monkeypatch, FakeHttpResponse(502, text=page))
+    with pytest.raises(ProviderUnavailable) as excinfo:
+        provider.chat([{"role": "user", "content": "你好"}], timeout_sec=5)
+    assert "HTTP 502" in str(excinfo.value)
+    assert "internal-host-01" not in str(excinfo.value)
+
+
+def test_dashscope_requests_do_not_follow_redirects(monkeypatch):
+    ok = FakeHttpResponse(200, {"output": {"choices": [{"message": {"content": "好"}}]}})
+    provider, calls = make_dashscope(monkeypatch, ok)
+    provider.chat([{"role": "user", "content": "你好"}], timeout_sec=5)
+    assert calls[0]["allow_redirects"] is False

@@ -45,6 +45,10 @@ class Speaker:
         """Write speech for `text` to an MP3 file. Needs network access."""
         edge_tts.Communicate(text, self._voice).save_sync(path)
 
+    def start(self, path):
+        """Begin playback and return the process, for callers that may stop it early."""
+        return subprocess.Popen([*self._player, path])
+
     def play(self, path):
         subprocess.run([*self._player, path], check=True)
 

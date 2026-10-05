@@ -100,10 +100,13 @@ _EMOJI = re.compile(
 _SENTENCE = re.compile(r"[^。！？!?；;]+[。！？!?；;]*")
 
 
-def clean_spoken(text, max_sentences):
-    """Make model text suitable for TTS: strip markdown/emoji, cap sentence count."""
+def clean_spoken(text):
+    """Make model text suitable for TTS: strip markdown, emoji and stray spacing."""
     text = _EMOJI.sub("", _MARKDOWN.sub("", text))
     text = re.sub(r"\s+", " ", text).strip()
-    text = re.sub(r"\s+([。！？!?，,、；;：:])", r"\1", text)
-    sentences = [s.strip() for s in _SENTENCE.findall(text) if s.strip()]
-    return "".join(sentences[:max_sentences])
+    return re.sub(r"\s+([。！？!?，,、；;：:])", r"\1", text)
+
+
+def split_sentences(text):
+    """Split spoken text into sentences, so it can be delivered a piece at a time."""
+    return [s.strip() for s in _SENTENCE.findall(text or "") if s.strip()]

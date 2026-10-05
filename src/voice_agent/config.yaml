@@ -4,9 +4,23 @@
 # environment variable and its API key comes from the environment too
 # (DASHSCOPE_API_KEY for DashScope); see SETUP.md.
 
-# Camera source, language (zh-CN | zh-TW | zh-HK) and the edge-tts voice/player
-# are shared with object_narrator. Path is relative to this file.
-narrator_config: ../object_narrator/config.yaml
+# Camera source, language (zh-CN | zh-TW | zh-HK) and the edge-tts voice/player,
+# in object_narrator's config format. Path is relative to this file.
+narrator_config: narrator.yaml
+
+# How the robot listens, and how you stop it when it is talking.
+#   push_to_talk  Enter starts and stops recording. Enter also stops speech.
+#   always_on     it listens continuously (needs webrtcvad), and speech during
+#                 playback interrupts it. Enter still works.
+listening:
+  mode: push_to_talk
+  # always_on: speech must last this long during playback to count as an
+  # interruption. Short bursts (including the robot hearing itself, since
+  # there is no echo cancellation) are ignored.
+  interrupt_ms: 300
+  # How often playback checks whether it should stop. The robot goes quiet
+  # within roughly this long plus the player's own exit time.
+  playback_poll_ms: 20
 
 audio:
   # Microphone: sounddevice index or name; null = system default input.
@@ -16,10 +30,9 @@ audio:
   max_record_sec: 20       # recording is cut off after this
   min_record_sec: 0.3      # shorter recordings are treated as "not heard"
 
-  # Voice activity detection instead of push-to-talk. Needs:
-  #   pip install webrtcvad-wheels
+  # Voice activity detection, used by always_on listening and by voice
+  # interruption. Needs: pip install webrtcvad-wheels
   vad:
-    enabled: false
     aggressiveness: 2      # 0-3; higher filters more background noise
     silence_ms: 800        # this much silence ends an utterance
     start_timeout_sec: 10  # stop waiting if nobody speaks
@@ -36,9 +49,21 @@ local_asr:
 speech_output:
   # edge-tts: object_narrator's Speaker (voice set in the narrator config).
   # provider: the provider's own TTS, falling back to edge-tts if it fails.
+  # ros2:     the robot's own offline TTS service (settings below). Works with
+  #           no network. It cannot be stopped once it starts talking: an
+  #           interruption takes effect when the robot finishes what it is
+  #           saying (at most conversation.max_reply_sentences sentences).
   engine: edge-tts
   # Spoken phrases are cached here so fallback phrases work offline.
+  # Not used by ros2.
   cache_dir: ~/.cache/voice_agent/tts
+
+  ros2:                     # required when engine is ros2; set by the deployment
+    service: ""             # service name, e.g. /tts/speak
+    type: ""                # service type, e.g. my_interfaces/srv/Speak
+    text_field: text        # request field that carries the text
+    request: {}             # other request fields, e.g. {voice: 0, speed: 1.0}
+    max_chars: 600          # longer replies are cut to this length
 
 timeouts:                  # seconds; a slower call counts as "offline"
   asr_sec: 15
@@ -48,7 +73,12 @@ timeouts:                  # seconds; a slower call counts as "offline"
 
 conversation:
   max_history_turns: 10    # user/assistant pairs kept as context
-  max_reply_sentences: 3   # longer model replies are cut to this
+  # A reply longer than this stops after this many sentences and asks
+  # continue_prompt; the rest is spoken only if the answer contains one of
+  # continue_words, and dropped otherwise.
+  max_reply_sentences: 3
+  continue_prompt: 还要继续吗？
+  continue_words: [继续, 要, 好, 嗯, 是, 说吧, 对]
 
 # Gestures the model may attach to a reply, e.g.
 #   {"say": "你好，我是巴克机器人。", "gesture": "hello"}
