@@ -83,7 +83,7 @@ option. The main ones:
 
 | Key | Default | Meaning |
 |---|---|---|
-| `narrator_config` | `../object_narrator/config.yaml` | Shared camera `source`, `language`, edge-tts `voice` and `player` |
+| `narrator_config` | `narrator.yaml` | Shared camera `source`, `language`, edge-tts `voice` and `player` |
 | `audio.input_device` | `null` | Microphone index or name (`--list-devices`) |
 | `listening.mode` | `push_to_talk` | `always_on` listens continuously and allows spoken interruption (below) |
 | `conversation.max_reply_sentences` | `3` | Sentences spoken before asking 还要继续吗 |
@@ -487,6 +487,7 @@ microphone or camera. Use `--check` for those.
 | `voice_agent/gestures.py` | Gesture catalogue and prompt section, skip-while-playing, stub and ROS 2 backends |
 | `voice_agent/gesture_log.py` | Rotating per-turn record of chosen gestures |
 | `gestures.yaml` | The catalogue itself: names, `use_when`, durations, few-shot examples |
+| `narrator.yaml` | Camera source, language, edge-tts voice and player (object_narrator format) |
 | `voice_agent/audio.py` | Microphone capture (push-to-talk, webrtcvad), WAV encoding |
 | `voice_agent/speech.py` | TTS with offline phrase cache, playback via `object_narrator` |
 | `voice_agent/config.py` | Config dataclasses and validation |

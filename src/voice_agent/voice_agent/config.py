@@ -118,7 +118,7 @@ class FallbackPhrases:
 @dataclass
 class Config:
     system_prompt: str
-    narrator_config: str = "../object_narrator/config.yaml"
+    narrator_config: str = "narrator.yaml"
     audio: AudioConfig = field(default_factory=AudioConfig)
     listening: ListeningConfig = field(default_factory=ListeningConfig)
     local_asr: LocalAsrConfig = field(default_factory=LocalAsrConfig)

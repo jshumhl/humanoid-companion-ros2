@@ -196,8 +196,9 @@ v4l2-ctl --list-devices
 
 A RealSense D435i shows several `/dev/video*` nodes, and usually only one of
 them is the color stream. Set the camera in
-[src/object_narrator/config.yaml](src/object_narrator/config.yaml). The voice
-agent reads its camera and language settings from this file:
+[src/object_narrator/config.yaml](src/object_narrator/config.yaml) for the
+narrator and in [src/voice_agent/narrator.yaml](src/voice_agent/narrator.yaml)
+for the voice agent. Both files use the same format:
 
 ```yaml
 source: 0              # or /dev/video4, etc.

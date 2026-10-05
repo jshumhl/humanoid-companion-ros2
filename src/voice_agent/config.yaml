@@ -4,9 +4,9 @@
 # environment variable and its API key comes from the environment too
 # (DASHSCOPE_API_KEY for DashScope); see SETUP.md.
 
-# Camera source, language (zh-CN | zh-TW | zh-HK) and the edge-tts voice/player
-# are shared with object_narrator. Path is relative to this file.
-narrator_config: ../object_narrator/config.yaml
+# Camera source, language (zh-CN | zh-TW | zh-HK) and the edge-tts voice/player,
+# in object_narrator's config format. Path is relative to this file.
+narrator_config: narrator.yaml
 
 # How the robot listens, and how you stop it when it is talking.
 #   push_to_talk  Enter starts and stops recording. Enter also stops speech.

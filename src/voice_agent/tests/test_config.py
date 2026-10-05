@@ -7,7 +7,7 @@ from voice_agent.config import ConfigError, load_config
 
 from .conftest import PACKAGE_DIR, SHIPPED_CONFIG
 
-NARRATOR_CONFIG = str(PACKAGE_DIR.parent / "object_narrator" / "config.yaml")
+NARRATOR_CONFIG = str(PACKAGE_DIR / "narrator.yaml")
 
 
 def write_config(tmp_path, **overrides):
