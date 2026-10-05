@@ -68,11 +68,11 @@ python -m voice_agent --config my.yaml   # another config file
 ## Configuration
 
 **Secrets go in the environment, never in `config.yaml`.** The CLI reads a
-`.env` file. It looks in the current directory and its parents first, then in
-the config file's directory and its parents.
+`.env` file. It looks beside the config file and in its parents first, then in
+the current directory and its parents, so a deployment's own `.env` wins.
 
 ```bash
-# .env at the repository root (already in .gitignore)
+# .env beside config.yaml or at the repository root (keep it out of git)
 LLM_PROVIDER=dashscope
 DASHSCOPE_API_KEY=sk-...
 DASHSCOPE_BASE_URL=https://dashscope-intl.aliyuncs.com/api/v1   # optional, see SETUP.md
@@ -467,7 +467,7 @@ camera-failure cases), the offline menu (keyword and number answers, failed
 attempts, `[unk]` handling), the Vosk grammar built from the options, gestures
 (catalogue validation, skipping while one plays, backend fallback, firing at
 playback start), config validation, provider selection, ASR response parsing,
-the speech cache, and VAD segmentation. They need no network, microphone, Vosk
+the speech cache, `.env` lookup order, and VAD segmentation. They need no network, microphone, Vosk
 model or ROS: the ROS 2 tests skip themselves when `rclpy` is missing, and the
 recognizer itself is covered by `--check local-asr`. They need no network,
 microphone or camera. Use `--check` for those.

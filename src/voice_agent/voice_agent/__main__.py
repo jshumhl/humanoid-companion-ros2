@@ -49,10 +49,11 @@ def main(argv=None):
         print(sd.query_devices())
         return 0
 
-    # .env is looked up from the working directory, then from the config
-    # file's directory, so the repo's .env is found wherever the agent is started.
-    from .env import find_dotenv, load_dotenv
-    env_path = find_dotenv() or find_dotenv(Path(args.config).resolve().parent)
+    # .env is looked up beside the config file (and its parents) first, then
+    # from the working directory, so a deployment's own .env wins over any
+    # other .env found on the way from wherever the agent was started.
+    from .env import find_dotenv_for, load_dotenv
+    env_path = find_dotenv_for(args.config)
     if env_path:
         load_dotenv(env_path)
         log.debug("Loaded environment from %s", env_path)

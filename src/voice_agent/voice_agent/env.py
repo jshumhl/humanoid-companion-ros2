@@ -14,6 +14,16 @@ def find_dotenv(start=None):
     return None
 
 
+def find_dotenv_for(config_path, cwd=None):
+    """The .env for a run: the one nearest the config file, else from `cwd`.
+
+    The config's side comes first because it is the more specific: in a repo
+    that holds several programs, each deployment keeps its own .env beside its
+    config, and a .env at the repo root may belong to something else.
+    """
+    return find_dotenv(Path(config_path).resolve().parent) or find_dotenv(cwd)
+
+
 def load_dotenv(path=None):
     """Set KEY=VALUE lines as environment variables. Existing variables win.
 
