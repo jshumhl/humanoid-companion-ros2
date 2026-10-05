@@ -109,6 +109,16 @@ gestures:
   log_max_bytes: 1000000
   log_backups: 3
 
+# What the agent is doing (idle, listening, thinking, speaking), reported each
+# time it changes, e.g. for a face display that shows the robot is listening.
+status:
+  enabled: true
+  # stub: write it to the debug log only (works with no robot and no ROS)
+  # ros2: publish it as std_msgs/String on ros2_topic, transient-local, so a
+  #       node that starts later still gets the current phase
+  backend: stub
+  ros2_topic: /voice_agent/state
+
 # Per-provider settings. Only the section for the active LLM_PROVIDER is used.
 providers:
   dashscope:
