@@ -82,7 +82,7 @@ def main(argv=None):
     from .tools import default_tools
     gestures = build_controller(config.gestures, config.gesture_catalogue)
     gesture_log = open_gesture_log(config.gestures) if config.gestures.enabled else None
-    agent = Agent(provider, default_tools(config.narrator), config,
+    agent = Agent(provider, default_tools(config.narrator, config.clock), config,
                   config.gesture_catalogue, gesture_log)
 
     speech = None

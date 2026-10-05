@@ -58,5 +58,6 @@ def look_around_tool(narrator_config, describe_scene=None):
     )
 
 
-def default_tools(narrator_config):
-    return ToolRegistry([look_around_tool(narrator_config)])
+def default_tools(narrator_config, clock_config=None):
+    from .clock import clock_tools
+    return ToolRegistry([look_around_tool(narrator_config), *clock_tools(clock_config)])
