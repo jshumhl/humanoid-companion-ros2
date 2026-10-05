@@ -71,6 +71,11 @@ timeouts:                  # seconds; a slower call counts as "offline"
   tts_sec: 20
   tool_sec: 20             # first look_around also loads the YOLO model
 
+clock:
+  # Time zone for current_time() and today(), e.g. Asia/Shanghai.
+  # Empty: this machine's own time zone.
+  timezone: ""
+
 conversation:
   max_history_turns: 10    # user/assistant pairs kept as context
   # A reply longer than this stops after this many sentences and asks
@@ -139,6 +144,8 @@ system_prompt: |
 
   当用户问你看到了什么、周围有什么、面前有什么，或任何需要看的问题时，
   必须调用 look_around，不要猜测。look_around 返回的句子会原样朗读给用户，不要改写。
+  当用户问现在几点时，必须调用 current_time；问今天几号、星期几时，必须调用 today。
+  不要自己猜时间或日期，它们返回的句子会原样朗读给用户。
 
 # Fixed phrases spoken when something goes wrong. Keep them friendly and
 # non-technical. They are cached as audio at startup so they work offline.

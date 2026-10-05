@@ -11,6 +11,7 @@ import typing
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Union
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import yaml
 
@@ -79,6 +80,11 @@ class TimeoutConfig:
 
 
 @dataclass
+class ClockConfig:
+    timezone: str = ""                 # IANA name, e.g. Asia/Shanghai; empty = this machine's
+
+
+@dataclass
 class ConversationConfig:
     max_history_turns: int = 10
     max_reply_sentences: int = 3       # sentences spoken before asking to continue
@@ -138,6 +144,7 @@ class Config:
     speech_output: SpeechOutputConfig = field(default_factory=SpeechOutputConfig)
     timeouts: TimeoutConfig = field(default_factory=TimeoutConfig)
     conversation: ConversationConfig = field(default_factory=ConversationConfig)
+    clock: ClockConfig = field(default_factory=ClockConfig)
     gestures: GesturesConfig = field(default_factory=GesturesConfig)
     providers: dict = field(default_factory=dict)
     fallback_phrases: FallbackPhrases = field(default_factory=FallbackPhrases)
@@ -234,6 +241,8 @@ def validate(config):
              all(word.strip() for word in conversation.continue_words),
              "conversation.continue_words must be a non-empty list of non-empty words")
 
+    _validate_clock(config.clock)
+
     _require(config.system_prompt.strip() != "", "system_prompt must not be empty")
     _require("{tools}" in config.system_prompt,
              "system_prompt must contain the {tools} placeholder, where the tool list is inserted")
@@ -269,6 +278,16 @@ def _validate_robot_tts(speech_output):
     _require(ROS2_SERVICE_TYPE.fullmatch(robot_tts.type) is not None,
              f"speech_output.ros2.type must look like my_interfaces/srv/Speak "
              f"when speech_output.engine is ros2, got {robot_tts.type!r}")
+
+
+def _validate_clock(clock):
+    if not clock.timezone:
+        return
+    try:
+        ZoneInfo(clock.timezone)
+    except (ZoneInfoNotFoundError, ValueError):
+        raise ConfigError(f"clock.timezone must be a time zone name like Asia/Shanghai, "
+                          f"got {clock.timezone!r}") from None
 
 
 def _validate_gestures(gestures, system_prompt):
