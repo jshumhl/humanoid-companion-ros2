@@ -105,6 +105,13 @@ class GesturesConfig:
 
 
 @dataclass
+class StatusConfig:
+    enabled: bool = True
+    backend: str = "stub"                       # stub | ros2
+    ros2_topic: str = "/voice_agent/state"
+
+
+@dataclass
 class MenuOption:
     action: str      # settings | retry | quit
     keyword: str     # spoken word that selects it, e.g. 重试
@@ -146,6 +153,7 @@ class Config:
     conversation: ConversationConfig = field(default_factory=ConversationConfig)
     clock: ClockConfig = field(default_factory=ClockConfig)
     gestures: GesturesConfig = field(default_factory=GesturesConfig)
+    status: StatusConfig = field(default_factory=StatusConfig)
     providers: dict = field(default_factory=dict)
     fallback_phrases: FallbackPhrases = field(default_factory=FallbackPhrases)
     offline_menu: OfflineMenuConfig = field(default_factory=OfflineMenuConfig)
@@ -163,6 +171,8 @@ MENU_ACTIONS = ("settings", "retry", "quit")
 LISTENING_MODES = ("push_to_talk", "always_on")
 LOCAL_ASR_SAMPLE_RATE = 16000
 GESTURE_BACKENDS = ("stub", "ros2")
+STATUS_BACKENDS = ("stub", "ros2")
+ROS2_TOPIC_NAME = ROS2_SERVICE_NAME   # topics and services follow the same naming rules
 # Loaded from other files by load_config, never read from config.yaml itself.
 DERIVED_FIELDS = ("narrator", "gesture_catalogue")
 MAX_MENU_OPTIONS = 3  # a spoken menu longer than this is hard to remember
@@ -247,6 +257,7 @@ def validate(config):
     _require("{tools}" in config.system_prompt,
              "system_prompt must contain the {tools} placeholder, where the tool list is inserted")
     _validate_gestures(config.gestures, config.system_prompt)
+    _validate_status(config.status)
 
     for f in dataclasses.fields(FallbackPhrases):
         _require(getattr(config.fallback_phrases, f.name).strip() != "",
@@ -303,6 +314,17 @@ def _validate_gestures(gestures, system_prompt):
     _require("{gestures}" in system_prompt,
              "system_prompt must contain the {gestures} placeholder when gestures are "
              "enabled, so the model is told which gestures exist")
+
+
+def _validate_status(status):
+    if not status.enabled:
+        return
+    _require(status.backend in STATUS_BACKENDS,
+             f"status.backend must be one of {', '.join(STATUS_BACKENDS)}, "
+             f"got {status.backend!r}")
+    _require(ROS2_TOPIC_NAME.fullmatch(status.ros2_topic) is not None,
+             f"status.ros2_topic must be a ROS 2 topic name like /voice_agent/state, "
+             f"got {status.ros2_topic!r}")
 
 
 def _validate_menu(menu):
