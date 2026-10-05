@@ -245,7 +245,9 @@ The model passes the name as `{"tool": "enroll_face", "args": {"name": "张三"}
 A low-confidence match is spoken as a question; when the person answers 是,
 the model calls `enroll_face` with that name, which adds a sample, and when
 they give another name, that name replaces the old one for this face. Faces
-are kept in memory only, for one session, and are never written to disk.
+and names are kept in memory only, for one session. The gesture tuning log
+(`gestures.log_path`) does record each turn's words, so a spoken name ends up
+there; set `log_path: ""` where that matters.
 
 Install the module and fetch its models once, while online:
 

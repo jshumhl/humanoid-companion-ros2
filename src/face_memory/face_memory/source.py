@@ -73,18 +73,21 @@ class RosImageFrames:
     def __init__(self, topic, timeout_sec):
         try:
             import rclpy
+            import rclpy.executors
             from sensor_msgs.msg import Image
         except ImportError as e:
             raise RuntimeError(
                 f"source {ROS2_PREFIX}{topic} needs ROS 2 ({e}). "
                 f"Run inside a sourced ROS 2 environment.") from e
-        self._rclpy = rclpy
         self._image_type = Image
         self._topic = topic
         self._timeout = timeout_sec
         if not rclpy.ok():
             rclpy.init(args=None)
         self._node = rclpy.create_node("face_memory_frames")
+        # Its own executor: other threads may be spinning their nodes on the global one.
+        self._executor = rclpy.executors.SingleThreadedExecutor()
+        self._executor.add_node(self._node)
 
     def grab(self, count=1):
         from rclpy.qos import qos_profile_sensor_data
@@ -100,7 +103,7 @@ class RosImageFrames:
                     if frames:
                         return frames
                     raise RuntimeError(f"No image on {self._topic} within {self._timeout:.0f} s")
-                self._rclpy.spin_once(self._node, timeout_sec=0.05)
+                self._executor.spin_once(timeout_sec=0.05)
                 if messages and time.monotonic() - last >= FRAME_SPACING_SEC:
                     frames.append(image_to_bgr(messages[-1]))
                     messages.clear()
