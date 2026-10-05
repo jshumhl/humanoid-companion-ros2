@@ -166,14 +166,20 @@ python -m pytest tests
 Most tests use a fake embedder with fixed vectors. They cover the similarity
 bands, averaging, sample limits, name correction, one name per face, session
 expiry, every spoken sentence, config validation, image conversion and model
-download checks. `test_still_images.py` runs the real models on public-domain
-US government portraits. Each person is enrolled from one photo and must be
-recognised in another taken years apart, and two other people must not be
-recognised. The tests also cover a photo with two people, a low-resolution
-photo and a blank image. The photos are downloaded on first run, pinned by
-commit and SHA-256, and cached in `~/.cache/face_memory/test-images`; they are
-not stored in this repository. These tests skip themselves when the models or
-photos can't be downloaded.
+download checks. `test_still_images.py` runs the real models. Without photos
+it checks that blank and noise images contain no face. For recognition, point
+`FACE_MEMORY_PHOTOS` at a local folder of photos of people who have agreed to
+it, one subfolder per person with at least two photos each, ideally taken on
+different days:
+
+```bash
+FACE_MEMORY_PHOTOS=~/face-test-photos python -m pytest tests/test_still_images.py
+```
+
+Each person is enrolled from their first photo and must be recognised in each
+of their other photos and never taken for anyone else. No photos of people are
+stored in or downloaded by this repository; keep that folder out of git. These
+tests skip themselves when the models can't be downloaded.
 
 ## Layout
 
