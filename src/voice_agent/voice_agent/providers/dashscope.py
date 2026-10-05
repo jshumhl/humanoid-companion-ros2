@@ -65,9 +65,13 @@ class DashScopeProvider(Provider):
 
         base_url = os.environ.get("DASHSCOPE_BASE_URL", "").strip().rstrip("/") or DEFAULT_BASE_URL
         parsed = urlparse(base_url)
-        if parsed.scheme != "https" or not parsed.netloc:
+        if (parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password
+                or parsed.query or parsed.fragment):
+            # Credentials in the URL would end up in logs and error messages;
+            # the key belongs in DASHSCOPE_API_KEY only.
             raise ProviderConfigError(
-                f"DASHSCOPE_BASE_URL must look like https://host/api/v1, got {base_url!r}"
+                "DASHSCOPE_BASE_URL must look like https://host/api/v1, with no credentials, "
+                "query or fragment"
             )
         self.base_url = base_url
         self._session = requests.Session()
@@ -112,18 +116,43 @@ class DashScopeProvider(Provider):
     def _post(self, path, body, timeout_sec):
         url = self.base_url + path
         try:
+            # No redirects: the request carries the API key, and it goes only
+            # to the configured endpoint.
             response = self._session.post(
-                url, json=body, headers=self._headers, timeout=(CONNECT_TIMEOUT_SEC, timeout_sec)
+                url, json=body, headers=self._headers, timeout=(CONNECT_TIMEOUT_SEC, timeout_sec),
+                allow_redirects=False,
             )
         except requests.RequestException as e:
             # Connection refused, DNS failure, TLS failure, timeout.
             raise ProviderUnavailable(f"DashScope unreachable ({path}): {e}") from e
 
         if response.status_code >= 500:
-            raise ProviderUnavailable(f"DashScope {response.status_code} ({path}): {response.text[:300]}")
+            raise ProviderUnavailable(f"DashScope ({path}): {describe_error(response)}")
         if response.status_code != 200:
-            raise ProviderError(f"DashScope {response.status_code} ({path}): {response.text[:300]}")
+            raise ProviderError(f"DashScope ({path}): {describe_error(response)}")
         return response
+
+
+def describe_error(response):
+    """Status plus DashScope's own error code and message, never the raw body.
+
+    DashScope errors are JSON: {"code": ..., "message": ..., "request_id": ...}.
+    Anything else (a gateway's HTML page, say) is reduced to the status code.
+    """
+    parts = [f"HTTP {response.status_code}"]
+    try:
+        data = response.json()
+    except ValueError:
+        data = None
+    if isinstance(data, dict):
+        for key in ("code", "message"):
+            value = data.get(key)
+            if isinstance(value, str) and value.strip():
+                parts.append(value.strip()[:200])
+        request_id = data.get("request_id")
+        if isinstance(request_id, str) and request_id:
+            parts.append(f"(request_id {request_id[:64]})")
+    return " ".join(parts)
 
 
 def extract_transcript(data):
