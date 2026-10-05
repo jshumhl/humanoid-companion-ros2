@@ -1,0 +1,33 @@
+# face_memory configuration.
+
+# Where frames come from:
+#   0, 1, ...        camera index
+#   /dev/videoN      camera device
+#   path/to/img.jpg  an image file (for trying it out)
+#   ros2:<topic>     a sensor_msgs/Image topic, e.g. ros2:/camera/color/image_raw
+#                    (needs a sourced ROS 2 environment)
+source: 0
+
+# Model files are downloaded here on first use and checked by SHA-256.
+# Fetch them ahead of time with: python -m face_memory download-models
+model_dir: ~/.cache/face_memory/models
+
+# Cosine similarity between a face and someone remembered:
+#   >= match_threshold                    recognised by name
+#   >= unsure_threshold, < match_threshold  asks "你是X吗？"
+#   below unsure_threshold                not recognised
+match_threshold: 0.5
+unsure_threshold: 0.363
+
+# Everything remembered is forgotten after this many minutes with no
+# enrollment or recognition, and when the program exits. Nothing is ever
+# written to disk.
+session_idle_min: 30
+
+# --- Optional ---
+# frames_per_enroll: 3     # frames averaged for one enrollment
+# detect_confidence: 0.8   # minimum face detection score, 0-1
+# min_face_px: 40          # smaller faces are too far away to recognise
+# max_image_side: 640      # frames are scaled down to this before detection
+# frame_timeout_sec: 5.0   # give up if the source delivers no frame
+# max_samples_per_name: 5  # face samples kept per person; the oldest is dropped

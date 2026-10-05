@@ -119,6 +119,15 @@ status:
   backend: stub
   ros2_topic: /voice_agent/state
 
+# Face memory: the enroll_face(name) and who_is_here() tools. The robot
+# remembers a face when told a name ("这是张三") and says who it recognises.
+# Faces are kept in memory only, for one session. Needs the face_memory module
+# (pip install -e src/face_memory); its camera, models and thresholds are set in
+# config_file, in face_memory's own config format. Path is relative to this file.
+face_memory:
+  enabled: false
+  config_file: face_memory.yaml
+
 # Per-provider settings. Only the section for the active LLM_PROVIDER is used.
 providers:
   dashscope:

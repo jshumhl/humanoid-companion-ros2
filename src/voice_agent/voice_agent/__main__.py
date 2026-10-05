@@ -12,7 +12,7 @@ from .config import ConfigError, load_config
 
 log = logging.getLogger("voice_agent")
 
-CHECKS = ("speaker", "mic", "camera", "llm", "asr", "local-asr")
+CHECKS = ("speaker", "mic", "camera", "face", "llm", "asr", "local-asr")
 DEFAULT_CONFIG = Path(__file__).resolve().parent.parent / "config.yaml"
 
 
@@ -86,7 +86,9 @@ def main(argv=None):
     status = build_reporter(config.status)
     status.set(IDLE)
     gesture_log = open_gesture_log(config.gestures) if config.gestures.enabled else None
-    agent = Agent(provider, default_tools(config.narrator, config.clock), config,
+    agent = Agent(provider,
+                  default_tools(config.narrator, config.clock, build_face_service(config)),
+                  config,
                   config.gesture_catalogue, gesture_log)
 
     speech = None
@@ -125,6 +127,22 @@ def main(argv=None):
         if gesture_log:
             gesture_log.close()
     return 0
+
+
+def build_face_service(config):
+    """face_memory's service, or None when it is disabled or cannot start.
+
+    A face_memory failure turns its two tools off; the agent still talks.
+    """
+    if config.face is None:
+        return None
+    from face_memory import build_service
+    try:
+        return build_service(config.face)
+    except Exception as e:
+        print(f"Face memory unavailable, enroll_face and who_is_here are off: {e}",
+              file=sys.stderr)
+        return None
 
 
 def make_speech_output(config, provider):

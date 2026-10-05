@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "face_memory"
+version = "0.1.0"
+description = "Remember faces by name for one session, on CPU, with a swappable embedder"
+requires-python = ">=3.10"
+dependencies = [
+    "opencv-python>=4.8",
+    "numpy",
+    "pyyaml",
+]
+
+[tool.setuptools]
+packages = ["face_memory"]

@@ -18,6 +18,7 @@ dependencies = [
 
 [project.optional-dependencies]
 vad = ["webrtcvad-wheels"]
+face = ["face_memory"]
 
 [tool.setuptools]
 packages = ["voice_agent", "voice_agent.providers"]

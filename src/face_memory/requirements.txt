@@ -1,0 +1,4 @@
+opencv-python>=4.8   # YuNet detector and SFace recognizer ship in OpenCV
+numpy
+pyyaml
+# Optional, for a ros2:<topic> source: a sourced ROS 2 environment (rclpy, sensor_msgs)

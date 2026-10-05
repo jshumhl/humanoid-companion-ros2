@@ -112,6 +112,14 @@ class StatusConfig:
 
 
 @dataclass
+class FaceMemorySettings:
+    """The enroll_face(name) and who_is_here() tools, from the face_memory module."""
+
+    enabled: bool = False
+    config_file: str = "face_memory.yaml"       # relative to this config file
+
+
+@dataclass
 class MenuOption:
     action: str      # settings | retry | quit
     keyword: str     # spoken word that selects it, e.g. 重试
@@ -154,6 +162,7 @@ class Config:
     clock: ClockConfig = field(default_factory=ClockConfig)
     gestures: GesturesConfig = field(default_factory=GesturesConfig)
     status: StatusConfig = field(default_factory=StatusConfig)
+    face_memory: FaceMemorySettings = field(default_factory=FaceMemorySettings)
     providers: dict = field(default_factory=dict)
     fallback_phrases: FallbackPhrases = field(default_factory=FallbackPhrases)
     offline_menu: OfflineMenuConfig = field(default_factory=OfflineMenuConfig)
@@ -161,6 +170,7 @@ class Config:
     # Filled in by load_config, not read from YAML.
     narrator: object = field(default=None, repr=False)
     gesture_catalogue: object = field(default=None, repr=False)
+    face: object = field(default=None, repr=False)   # face_memory Config, or None if disabled
 
 
 SPEECH_ENGINES = ("edge-tts", "provider", "ros2")
@@ -174,7 +184,7 @@ GESTURE_BACKENDS = ("stub", "ros2")
 STATUS_BACKENDS = ("stub", "ros2")
 ROS2_TOPIC_NAME = ROS2_SERVICE_NAME   # topics and services follow the same naming rules
 # Loaded from other files by load_config, never read from config.yaml itself.
-DERIVED_FIELDS = ("narrator", "gesture_catalogue")
+DERIVED_FIELDS = ("narrator", "gesture_catalogue", "face")
 MAX_MENU_OPTIONS = 3  # a spoken menu longer than this is hard to remember
 
 
@@ -191,6 +201,8 @@ def load_config(path):
         raise ConfigError(f"{path}: top level must be a mapping")
     if "narrator" in raw:
         raise ConfigError("narrator: set `narrator_config` to a file path instead")
+    if "face" in raw:
+        raise ConfigError("face: set `face_memory.config_file` to a file path instead")
     if "gesture_catalogue" in raw:
         raise ConfigError(
             "gesture_catalogue: list gestures in gestures.yaml and point "
@@ -200,6 +212,7 @@ def load_config(path):
     validate(config)
     config.narrator = _load_narrator(path.parent, config.narrator_config)
     config.gesture_catalogue = _load_gesture_catalogue(path.parent, config.gestures)
+    config.face = _load_face_memory(path.parent, config.face_memory)
     return config
 
 
@@ -376,6 +389,27 @@ def _load_gesture_catalogue(base_dir, gestures):
         return load_catalogue(path)
     except GestureCatalogueError as e:
         raise ConfigError(f"gestures.catalogue_file: {e}") from e
+
+
+def _load_face_memory(base_dir, settings):
+    if not settings.enabled:
+        return None
+    try:
+        from face_memory.config import load_config as load_face_config
+    except ImportError as e:
+        raise ConfigError(
+            "face_memory.enabled is true but the face_memory module is not installed: "
+            "pip install -e src/face_memory") from e
+
+    path = Path(settings.config_file).expanduser()
+    if not path.is_absolute():
+        path = base_dir / path
+    if not path.is_file():
+        raise ConfigError(f"face_memory.config_file: file not found: {path}")
+    try:
+        return load_face_config(path)
+    except (ValueError, TypeError) as e:
+        raise ConfigError(f"face_memory.config_file ({path}): {e}") from e
 
 
 def _require(condition, message):
