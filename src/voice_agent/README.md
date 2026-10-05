@@ -101,6 +101,7 @@ option. The main ones:
 | `gestures.catalogue_file` | `gestures.yaml` | Which gestures exist and when to use them (below) |
 | `gestures.backend` | `stub` | `stub` logs only; `ros2` publishes to `ros2_topic` |
 | `gestures.log_path` | `~/.cache/voice_agent/gesture-choices.log` | Per-turn record of the chosen gesture, for tuning |
+| `status.backend` | `stub` | `stub` logs only; `ros2` publishes the current phase to `ros2_topic` (below) |
 | `face_memory.enabled` | `false` | Adds the `enroll_face` and `who_is_here` tools (below) |
 | `face_memory.config_file` | `face_memory.yaml` | Camera source, models and thresholds, in face_memory's format |
 | `system_prompt` | persona | Must contain `{tools}` and `{gestures}`, replaced with the tool and gesture lists |
@@ -463,6 +464,41 @@ with no ROS installed.** If `ros2` is selected but ROS is unavailable, it logs
 a warning and falls back to the stub rather than failing to start. Run the ROS 2
 backend in the container from `docker-compose.yml` (Ubuntu 22.04, ROS 2 Humble),
 and watch it with `ros2 topic echo /gesture/request`.
+
+## Status
+
+The agent reports what it is doing, so a face display or a status light can
+follow along. There are four phases, and each is reported only when it changes:
+
+| Phase | When |
+|---|---|
+| `idle` | Waiting for Enter (push-to-talk) or for typed input, and on exit |
+| `listening` | Recording; in always-on mode, the whole time it waits for speech |
+| `thinking` | From the end of the recording to the start of playback: ASR, model, tool |
+| `speaking` | From the moment playback starts, the same moment a gesture starts |
+
+A typical turn in always-on mode is `listening → thinking → speaking → listening`.
+An interruption goes straight back to `listening`.
+
+```yaml
+status:
+  enabled: true
+  backend: stub                  # stub | ros2
+  ros2_topic: /voice_agent/state
+```
+
+The `ros2` backend publishes the phase name as `std_msgs/String` with
+transient-local durability (depth 1), so a node that starts after the agent
+still receives the current phase. Like the gesture backend, it imports `rclpy`
+only when selected and falls back to the stub if ROS is unavailable. Watch it
+with:
+
+```bash
+ros2 topic echo --qos-durability transient_local /voice_agent/state
+```
+
+A failing status backend is logged and ignored. It never stops the robot from
+speaking.
 
 ## Providers
 

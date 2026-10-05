@@ -79,8 +79,12 @@ def main(argv=None):
     from .agent import Agent
     from .gesture_log import open_gesture_log
     from .gestures import build_controller
+    from .status import IDLE, StatusSpeech, build_reporter
     from .tools import default_tools
     gestures = build_controller(config.gestures, config.gesture_catalogue)
+    # After the gesture backend: that one owns the ROS 2 context when both use it.
+    status = build_reporter(config.status)
+    status.set(IDLE)
     gesture_log = open_gesture_log(config.gestures) if config.gestures.enabled else None
     agent = Agent(provider,
                   default_tools(config.narrator, config.clock, build_face_service(config)),
@@ -99,6 +103,7 @@ def main(argv=None):
         phrases = config.fallback_phrases
         speech.prepare([phrases.not_heard, phrases.offline, phrases.error, phrases.tool_failed,
                         *menu_phrases(config.offline_menu)])
+        speech = StatusSpeech(speech, status)
 
     from .delivery import ReplyDelivery
     from .interrupt import NullWatcher, build_watcher
@@ -110,13 +115,14 @@ def main(argv=None):
 
     try:
         if args.text:
-            text_loop(agent, speech, config, gestures, delivery)
+            text_loop(agent, speech, config, gestures, delivery, status)
         else:
             warn_if_local_recognizer_missing(config)
-            voice_loop(agent, speech, config, gestures, delivery)
+            voice_loop(agent, speech, config, gestures, delivery, status)
     except (KeyboardInterrupt, EOFError):
         print()
     finally:
+        status.close()
         gestures.close()
         if gesture_log:
             gesture_log.close()
@@ -279,14 +285,19 @@ def print_settings(agent, config):
     print("  Try: python -m voice_agent --check llm", flush=True)
 
 
-def text_loop(agent, speech, config, gestures=None, delivery=None):
+def text_loop(agent, speech, config, gestures=None, delivery=None, status=None):
+    from .status import IDLE, THINKING
+
+    status = status or null_status()
     print("Text mode. Type a message, or q to quit.")
     while True:
+        status.set(IDLE)
         line = input("\n你：").strip()
         if line.lower() in ("q", "quit", "exit"):
             return
         if not line:
             continue
+        status.set(THINKING)
 
         # 还要继续吗 was asked and answered: pick up where the reply stopped.
         if delivery.wants_continue(line):
@@ -310,8 +321,11 @@ def text_loop(agent, speech, config, gestures=None, delivery=None):
                 return
 
 
-def voice_loop(agent, speech, config, gestures=None, delivery=None):
+def voice_loop(agent, speech, config, gestures=None, delivery=None, status=None):
     from .audio import make_recorder, to_wav_bytes
+    from .status import IDLE, LISTENING, THINKING
+
+    status = status or null_status()
 
     audio = config.audio
     always_on = config.listening.mode == "always_on"
@@ -331,10 +345,13 @@ def voice_loop(agent, speech, config, gestures=None, delivery=None):
 
     while True:
         if always_on:
+            status.set(LISTENING)
             print("\n(listening...)", flush=True)
         else:
+            status.set(IDLE)
             if input("\n[Enter] to talk: ").strip().lower() in ("q", "quit", "exit"):
                 return
+            status.set(LISTENING)
             print("Recording... press Enter to stop.", flush=True)
 
         try:
@@ -347,6 +364,7 @@ def voice_loop(agent, speech, config, gestures=None, delivery=None):
 
         if always_on and len(pcm) == 0:
             continue  # nobody spoke; keep listening quietly
+        status.set(THINKING)
         if len(pcm) < audio.min_record_sec * audio.sample_rate:
             deliver(agent.fallback("not_heard"), speech)
             continue
@@ -377,6 +395,12 @@ def voice_loop(agent, speech, config, gestures=None, delivery=None):
             )
             if action == "quit":
                 return
+
+
+def null_status():
+    """A reporter that only logs, for loops run without one (tests)."""
+    from .status import StatusReporter, StubBackend
+    return StatusReporter(StubBackend())
 
 
 def listen_once(recorder, audio, local_recognizer):
