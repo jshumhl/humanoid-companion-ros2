@@ -7,7 +7,8 @@ looks through the camera.
 ```
 microphone → push-to-talk → ASR → LLM (JSON reply, may call a tool) → TTS → speaker
                                               │
-                                              └─ look_around() → object_narrator.describe_scene()
+                                              ├─ look_around() → object_narrator.describe_scene()
+                                              └─ enroll_face(name), who_is_here() → face_memory (optional)
 ```
 
 The steps run one after another in a single thread, and each turn prints what
@@ -59,7 +60,7 @@ Other ways to run it:
 ```bash
 python -m voice_agent --text             # type instead of talking (no microphone needed)
 python -m voice_agent --text --no-audio  # no microphone, no speaker: pure debugging
-python -m voice_agent --check all        # test speaker, mic, camera, LLM, ASR, offline recognizer
+python -m voice_agent --check all        # test speaker, mic, camera, face memory, LLM, ASR, offline recognizer
 python -m voice_agent --check llm        # just one component
 python -m voice_agent --list-devices     # audio device indexes for config.yaml
 python -m voice_agent -v                 # debug log, including raw model output
@@ -98,6 +99,8 @@ option. The main ones:
 | `gestures.catalogue_file` | `gestures.yaml` | Which gestures exist and when to use them (below) |
 | `gestures.backend` | `stub` | `stub` logs only; `ros2` publishes to `ros2_topic` |
 | `gestures.log_path` | `~/.cache/voice_agent/gesture-choices.log` | Per-turn record of the chosen gesture, for tuning |
+| `face_memory.enabled` | `false` | Adds the `enroll_face` and `who_is_here` tools (below) |
+| `face_memory.config_file` | `face_memory.yaml` | Camera source, models and thresholds, in face_memory's format |
 | `system_prompt` | persona | Must contain `{tools}` and `{gestures}`, replaced with the tool and gesture lists |
 | `fallback_phrases.*` | Chinese phrases | `not_heard`, `offline`, `error`, `tool_failed` |
 | `offline_menu.*` | 3 options | Spoken menu offered when the provider is unreachable (below) |
@@ -117,6 +120,7 @@ Config error: Unknown key(s) audio.sample_rat. Allowed: audio.input_device, audi
 | Network down, DNS failure, timeout, 5xx | 我现在连不上网络，请稍后再试。 | `WARNING ... unreachable` |
 | Auth, quota, bad model, malformed JSON reply | 抱歉，我刚才走神了，请再说一遍。 | `WARNING ... 401 InvalidApiKey` etc. |
 | Camera or detector failure | 抱歉，我现在看不清周围。 | `WARNING Tool look_around failed: ...` |
+| Face memory cannot start (models missing, camera unknown) | – (its two tools are left out) | `Face memory unavailable, enroll_face and who_is_here are off: ...` |
 
 ### Offline menu
 
@@ -226,6 +230,33 @@ Tool(name="what_time", signature="what_time()",
 
 The tool list in the system prompt is generated from the registry, so no prompt
 edit is needed unless the model needs guidance on when to use the tool.
+
+### Face memory
+
+With `face_memory.enabled: true`, two more tools are registered, backed by
+[face_memory](../face_memory/README.md):
+
+| Tool | When the model calls it | Says, for example |
+|---|---|---|
+| `enroll_face(name)` | 我叫张三 / 这是张三, or 是 after 你是张三吗？ | 好的，张三，我记住你了。 |
+| `who_is_here()` | 你认识我吗 / 你还记得我吗 / 我是谁 | 我看到了张三。 / 你是张三吗？ / 我还不认识你，可以告诉我你的名字吗？ |
+
+The model passes the name as `{"tool": "enroll_face", "args": {"name": "张三"}}`.
+A low-confidence match is spoken as a question; when the person answers 是,
+the model calls `enroll_face` with that name, which adds a sample, and when
+they give another name, that name replaces the old one for this face. Faces
+are kept in memory only, for one session, and are never written to disk.
+
+Install the module and fetch its models once, while online:
+
+```bash
+pip install -e src/face_memory
+python -m face_memory --config src/voice_agent/face_memory.yaml download-models
+python -m voice_agent --check face
+```
+
+If face_memory cannot start, the agent runs without these two tools and says so
+in the terminal.
 
 ## Listening and interruption
 
@@ -495,11 +526,12 @@ microphone or camera. Use `--check` for those.
 | `voice_agent/protocol.py` | JSON reply schema parsing, spoken-text cleanup |
 | `voice_agent/menu.py` | Offline menu: keyword/number matching and attempt limit |
 | `voice_agent/local_asr.py` | Offline recognition of menu answers (Vosk, grammar from the options) |
-| `voice_agent/tools.py` | Tool registry and `look_around` |
+| `voice_agent/tools.py` | Tool registry, `look_around`, `enroll_face` and `who_is_here` |
 | `voice_agent/gestures.py` | Gesture catalogue and prompt section, skip-while-playing, stub and ROS 2 backends |
 | `voice_agent/gesture_log.py` | Rotating per-turn record of chosen gestures |
 | `gestures.yaml` | The catalogue itself: names, `use_when`, durations, few-shot examples |
 | `narrator.yaml` | Camera source, language, edge-tts voice and player (object_narrator format) |
+| `face_memory.yaml` | Face camera source, models and thresholds (face_memory format) |
 | `voice_agent/audio.py` | Microphone capture (push-to-talk, webrtcvad), WAV encoding |
 | `voice_agent/speech.py` | TTS with offline phrase cache, playback via `object_narrator` |
 | `voice_agent/robot_tts.py` | Speech through the robot's TTS service (`speech_output.engine: ros2`) |
