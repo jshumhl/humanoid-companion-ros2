@@ -122,6 +122,13 @@ def main(argv=None):
 
 
 def make_speech_output(config, provider):
+    if config.speech_output.engine == "ros2":
+        from .robot_tts import RobotTtsOutput, RobotTtsUnavailable
+        try:
+            return RobotTtsOutput(config.speech_output.ros2, timeout_sec=config.timeouts.tts_sec)
+        except RobotTtsUnavailable as e:
+            log.warning("Speech engine 'ros2' unavailable, using edge-tts: %s", e)
+
     from object_narrator.speaker import Speaker
 
     from .speech import SpeechOutput

@@ -5,6 +5,7 @@ they come from the object_narrator config that `narrator_config` points to.
 """
 
 import dataclasses
+import re
 import types
 import typing
 from dataclasses import dataclass, field
@@ -52,9 +53,21 @@ class LocalAsrConfig:
 
 
 @dataclass
+class RobotTtsConfig:
+    """A ROS 2 TTS service that plays text on the robot's speaker (engine: ros2)."""
+
+    service: str = ""                # service name, e.g. /tts/speak
+    type: str = ""                   # service type, e.g. my_interfaces/srv/Speak
+    text_field: str = "text"         # request field that carries the text
+    request: dict = field(default_factory=dict)  # other request fields, sent as given
+    max_chars: int = 600             # longer text is cut to this before it is sent
+
+
+@dataclass
 class SpeechOutputConfig:
-    engine: str = "edge-tts"         # edge-tts | provider
+    engine: str = "edge-tts"         # edge-tts | provider | ros2
     cache_dir: str = "~/.cache/voice_agent/tts"
+    ros2: RobotTtsConfig = field(default_factory=RobotTtsConfig)
 
 
 @dataclass
@@ -135,7 +148,9 @@ class Config:
     gesture_catalogue: object = field(default=None, repr=False)
 
 
-SPEECH_ENGINES = ("edge-tts", "provider")
+SPEECH_ENGINES = ("edge-tts", "provider", "ros2")
+ROS2_SERVICE_NAME = re.compile(r"(/[A-Za-z_][A-Za-z0-9_]*)+")
+ROS2_SERVICE_TYPE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*/srv/[A-Za-z_][A-Za-z0-9_]*")
 VAD_SAMPLE_RATES = (8000, 16000, 32000, 48000)
 MENU_ACTIONS = ("settings", "retry", "quit")
 LISTENING_MODES = ("push_to_talk", "always_on")
@@ -205,6 +220,7 @@ def validate(config):
     _require(config.speech_output.engine in SPEECH_ENGINES,
              f"speech_output.engine must be one of {', '.join(SPEECH_ENGINES)}, "
              f"got {config.speech_output.engine!r}")
+    _validate_robot_tts(config.speech_output)
 
     for f in dataclasses.fields(TimeoutConfig):
         _require(getattr(config.timeouts, f.name) > 0, f"timeouts.{f.name} must be > 0")
@@ -232,6 +248,27 @@ def validate(config):
                  f"providers.{name} must be a mapping")
 
     _validate_menu(config.offline_menu)
+
+
+def _validate_robot_tts(speech_output):
+    robot_tts = speech_output.ros2
+    _require(robot_tts.max_chars > 0, "speech_output.ros2.max_chars must be > 0")
+    for name in robot_tts.request:
+        _require(isinstance(name, str) and name.isidentifier(),
+                 f"speech_output.ros2.request keys must be field names, got {name!r}")
+    _require(robot_tts.text_field.isidentifier(),
+             f"speech_output.ros2.text_field must be a field name, got {robot_tts.text_field!r}")
+    _require(robot_tts.text_field not in robot_tts.request,
+             f"speech_output.ros2.request must not set {robot_tts.text_field!r}, "
+             f"which carries the text")
+    if speech_output.engine != "ros2":
+        return
+    _require(ROS2_SERVICE_NAME.fullmatch(robot_tts.service) is not None,
+             f"speech_output.ros2.service must be a ROS 2 service name like /tts/speak "
+             f"when speech_output.engine is ros2, got {robot_tts.service!r}")
+    _require(ROS2_SERVICE_TYPE.fullmatch(robot_tts.type) is not None,
+             f"speech_output.ros2.type must look like my_interfaces/srv/Speak "
+             f"when speech_output.engine is ros2, got {robot_tts.type!r}")
 
 
 def _validate_gestures(gestures, system_prompt):

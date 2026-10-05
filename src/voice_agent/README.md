@@ -19,7 +19,8 @@ was heard and what was said.
   `qwen-plus-character` for chat and `qwen-audio-3.0-asr-flash` for speech recognition.
 - Tool calls use our own JSON reply format, parsed locally, so provider-specific
   tool-calling APIs aren't needed.
-- Speech output uses `object_narrator`'s edge-tts `Speaker`.
+- Speech output uses `object_narrator`'s edge-tts `Speaker`, the provider's TTS,
+  or the robot's own offline TTS service (`speech_output.engine`).
 - The agent never speaks an error. Failures map to fixed, friendly phrases, and
   the technical detail goes to the terminal log.
 
@@ -88,7 +89,9 @@ option. The main ones:
 | `listening.mode` | `push_to_talk` | `always_on` listens continuously and allows spoken interruption (below) |
 | `conversation.max_reply_sentences` | `3` | Sentences spoken before asking 还要继续吗 |
 | `local_asr.model_path` | `~/.cache/voice_agent/vosk-model-small-cn-0.22` | Offline recognizer for menu answers (SETUP.md step 4) |
-| `speech_output.engine` | `edge-tts` | `provider` tries the provider's TTS first, then falls back to edge-tts |
+| `speech_output.engine` | `edge-tts` | `provider` tries the provider's TTS first, then falls back to edge-tts. `ros2` speaks through the robot's offline TTS service |
+| `speech_output.ros2.service`, `.type` | empty | The robot's TTS service name and type (`pkg/srv/Name`); required for `ros2` |
+| `speech_output.ros2.text_field` | `text` | Request field that carries the text; `request` sets any other fields, `max_chars` caps the length |
 | `timeouts.*_sec` | 15–20 | Longest wait for ASR, LLM, TTS or a tool before using a fallback phrase |
 | `conversation.max_history_turns` | `10` | Past exchanges sent with each request |
 | `providers.dashscope.*` | see file | Model names |
@@ -195,7 +198,9 @@ Each network call and tool call has a hard time limit, so the loop can't hang.
 Fallback phrases are turned into audio at startup and cached in
 `~/.cache/voice_agent/tts`. Once the agent has run online once, it can still
 say them with the network down. Any other reply needs the network, because
-edge-tts is an online service. If a reply can't be spoken, it is still printed.
+edge-tts is an online service. With `speech_output.engine: ros2` every reply can
+be spoken offline, since the robot synthesizes speech itself. If a reply can't
+be spoken, it is still printed.
 
 ## Reply format and tools
 
@@ -241,6 +246,12 @@ the turn back.** The robot never resumes an interrupted sentence: by the time
 it could, the person has moved on. Measured with the real player, playback
 goes silent 16–23 ms after the interrupt; anything over 200 ms is logged as a
 warning.
+
+With `speech_output.engine: ros2`, the robot's TTS service plays each reply
+itself and cannot be stopped once it starts. An interruption then takes effect
+when the robot finishes what it is saying, at most `max_reply_sentences`
+sentences; the rest of the turn is dropped as usual, and the logged stop
+latency is the real time until the robot went quiet.
 
 A reply is spoken as a single piece of audio rather than sentence by sentence.
 Splitting it sounded wrong: each playback reopens the audio device, which added
@@ -467,7 +478,8 @@ camera-failure cases), the offline menu (keyword and number answers, failed
 attempts, `[unk]` handling), the Vosk grammar built from the options, gestures
 (catalogue validation, skipping while one plays, backend fallback, firing at
 playback start), config validation, provider selection, ASR response parsing,
-the speech cache, `.env` lookup order, and VAD segmentation. They need no network, microphone, Vosk
+the speech cache, the robot TTS engine against a fake service, `.env` lookup
+order, and VAD segmentation. They need no network, microphone, Vosk
 model or ROS: the ROS 2 tests skip themselves when `rclpy` is missing, and the
 recognizer itself is covered by `--check local-asr`. They need no network,
 microphone or camera. Use `--check` for those.
@@ -490,6 +502,7 @@ microphone or camera. Use `--check` for those.
 | `narrator.yaml` | Camera source, language, edge-tts voice and player (object_narrator format) |
 | `voice_agent/audio.py` | Microphone capture (push-to-talk, webrtcvad), WAV encoding |
 | `voice_agent/speech.py` | TTS with offline phrase cache, playback via `object_narrator` |
+| `voice_agent/robot_tts.py` | Speech through the robot's TTS service (`speech_output.engine: ros2`) |
 | `voice_agent/config.py` | Config dataclasses and validation |
 | `voice_agent/checks.py` | `--check` component tests |
 | `voice_agent/timeouts.py` | Hard time limit for blocking calls |

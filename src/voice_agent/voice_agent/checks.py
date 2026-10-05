@@ -33,6 +33,9 @@ def run_checks(names, config):
 
 
 def check_speaker(config):
+    if config.speech_output.engine == "ros2":
+        return check_robot_tts(config)
+
     from object_narrator.speaker import Speaker
 
     narrator = config.narrator
@@ -40,6 +43,17 @@ def check_speaker(config):
     print(f"Speaking {TEST_PHRASE!r} with edge-tts voice {speaker.voice}...")
     speaker.speak(TEST_PHRASE)
     return _ask("Did you hear it?")
+
+
+def check_robot_tts(config):
+    from .robot_tts import MIN_CHARS_PER_SEC, Ros2TtsClient
+
+    settings = config.speech_output.ros2
+    client = Ros2TtsClient(settings)
+    print(f"Speaking {TEST_PHRASE!r} through {settings.service} ({settings.type})...")
+    timeout = config.timeouts.tts_sec + len(TEST_PHRASE) / MIN_CHARS_PER_SEC
+    client.speak(TEST_PHRASE, timeout)
+    return _ask("Did the robot say it?")
 
 
 def check_mic(config):

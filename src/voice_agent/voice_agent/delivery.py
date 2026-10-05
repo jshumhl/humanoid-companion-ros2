@@ -33,6 +33,10 @@ CHARS_PER_SEC = 5.0
 
 def heard_prefix(text, result):
     """Estimate the part of `text` that was heard before playback was stopped."""
+    if result.spoken:
+        # Played to the end before the interruption took effect (an engine
+        # that cannot stop mid-sentence): all of it was heard.
+        return text
     heard = int(result.played_sec * CHARS_PER_SEC)
     return text[:max(0, min(heard, len(text)))]
 
