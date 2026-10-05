@@ -78,9 +78,10 @@ def test_who_is_here():
 
 
 def test_face_tools_are_registered_only_with_a_face_service():
-    assert default_tools(None).names() == ["look_around"]
-    registry = default_tools(None, FakeFaces())
-    assert registry.names() == ["look_around", "enroll_face", "who_is_here"]
+    without = default_tools(None).names()
+    assert "enroll_face" not in without and "who_is_here" not in without
+    registry = default_tools(None, faces=FakeFaces())
+    assert registry.names() == [*without, "enroll_face", "who_is_here"]
     catalog = registry.catalog()
     assert "- enroll_face(name)：" in catalog
     assert '{"tool": "enroll_face", "args": {"name": "张三"}}' in catalog

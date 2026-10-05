@@ -91,9 +91,10 @@ def who_is_here_tool(faces):
     )
 
 
-def default_tools(narrator_config, faces=None):
-    """look_around, plus enroll_face and who_is_here when `faces` is given."""
-    tools = [look_around_tool(narrator_config)]
+def default_tools(narrator_config, clock_config=None, faces=None):
+    """look_around and the clock tools, plus enroll_face and who_is_here when `faces` is given."""
+    from .clock import clock_tools
+    tools = [look_around_tool(narrator_config), *clock_tools(clock_config)]
     if faces is not None:
         tools += [enroll_face_tool(faces), who_is_here_tool(faces)]
     return ToolRegistry(tools)

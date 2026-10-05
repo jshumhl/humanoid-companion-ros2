@@ -8,6 +8,7 @@ looks through the camera.
 microphone → push-to-talk → ASR → LLM (JSON reply, may call a tool) → TTS → speaker
                                               │
                                               ├─ look_around() → object_narrator.describe_scene()
+                                              ├─ current_time(), today() → this machine's clock
                                               └─ enroll_face(name), who_is_here() → face_memory (optional)
 ```
 
@@ -94,6 +95,7 @@ option. The main ones:
 | `speech_output.ros2.service`, `.type` | empty | The robot's TTS service name and type (`pkg/srv/Name`); required for `ros2` |
 | `speech_output.ros2.text_field` | `text` | Request field that carries the text; `request` sets any other fields, `max_chars` caps the length |
 | `timeouts.*_sec` | 15–20 | Longest wait for ASR, LLM, TTS or a tool before using a fallback phrase |
+| `clock.timezone` | empty | Time zone for `current_time()` and `today()`, e.g. `Asia/Shanghai`; empty uses this machine's |
 | `conversation.max_history_turns` | `10` | Past exchanges sent with each request |
 | `providers.dashscope.*` | see file | Model names |
 | `gestures.catalogue_file` | `gestures.yaml` | Which gestures exist and when to use them (below) |
@@ -120,6 +122,7 @@ Config error: Unknown key(s) audio.sample_rat. Allowed: audio.input_device, audi
 | Network down, DNS failure, timeout, 5xx | 我现在连不上网络，请稍后再试。 | `WARNING ... unreachable` |
 | Auth, quota, bad model, malformed JSON reply | 抱歉，我刚才走神了，请再说一遍。 | `WARNING ... 401 InvalidApiKey` etc. |
 | Camera or detector failure | 抱歉，我现在看不清周围。 | `WARNING Tool look_around failed: ...` |
+| Machine clock never set (year before 2025) | 我现在不太确定准确的时间。 | – |
 | Face memory cannot start (models missing, camera unknown) | – (its two tools are left out) | `Face memory unavailable, enroll_face and who_is_here are off: ...` |
 
 ### Offline menu
