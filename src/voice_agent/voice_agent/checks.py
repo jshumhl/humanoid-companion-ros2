@@ -90,6 +90,24 @@ def check_camera(config):
     return True
 
 
+def check_face(config):
+    face = config.face
+    if face is None:
+        print("face_memory.enabled is false: enroll_face and who_is_here are off.")
+        return True
+
+    from face_memory import build_service
+
+    print(f"Source: {face.source!r}, models: {face.model_dir}")
+    started = time.monotonic()
+    service = build_service(face)
+    print(f"Models loaded ({time.monotonic() - started:.1f} s)")
+    started = time.monotonic()
+    sentence = service.who_is_here()
+    print(f"{sentence}   ({time.monotonic() - started:.1f} s)")
+    return True
+
+
 def check_llm(config):
     from .agent import Agent
     from .providers import create_provider, selected_provider_name
@@ -176,6 +194,7 @@ CHECK_FUNCTIONS = {
     "speaker": check_speaker,
     "mic": check_mic,
     "camera": check_camera,
+    "face": check_face,
     "llm": check_llm,
     "asr": check_asr,
     "local-asr": check_local_asr,

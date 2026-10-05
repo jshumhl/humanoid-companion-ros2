@@ -169,3 +169,41 @@ def test_invalid_yaml(tmp_path):
     path.write_text("audio: [unclosed", encoding="utf-8")
     with pytest.raises(ConfigError, match="not valid YAML"):
         load_config(path)
+
+
+FACE_CONFIG = str(PACKAGE_DIR / "face_memory.yaml")
+
+
+def test_face_memory_is_off_by_default():
+    config = load_config(SHIPPED_CONFIG)
+    assert config.face_memory.enabled is False
+    assert config.face is None
+
+
+def test_face_memory_config_is_loaded_from_its_own_file(tmp_path):
+    pytest.importorskip("face_memory")
+    config = load_config(write_config(tmp_path, face_memory__enabled=True,
+                                      face_memory__config_file=FACE_CONFIG))
+    assert config.face.source == 0
+    assert config.face.unsure_threshold < config.face.match_threshold
+
+
+def test_missing_face_memory_config_file(tmp_path):
+    pytest.importorskip("face_memory")
+    with pytest.raises(ConfigError, match="face_memory.config_file: file not found"):
+        load_config(write_config(tmp_path, face_memory__enabled=True,
+                                 face_memory__config_file="/nonexistent/face.yaml"))
+
+
+def test_invalid_face_memory_config_is_reported(tmp_path):
+    pytest.importorskip("face_memory")
+    face = tmp_path / "face.yaml"
+    face.write_text("match_threshold: 0.2\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="face_memory.config_file.*thresholds"):
+        load_config(write_config(tmp_path, face_memory__enabled=True,
+                                 face_memory__config_file=str(face)))
+
+
+def test_inline_face_config_is_rejected(tmp_path):
+    with pytest.raises(ConfigError, match="face_memory.config_file"):
+        load_config(write_config(tmp_path, face={"source": 0}))

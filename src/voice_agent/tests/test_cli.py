@@ -1,8 +1,9 @@
 """Tests for the CLI glue: menu input in voice mode, and what gets spoken."""
 
 import numpy as np
+import pytest
 
-from voice_agent.__main__ import deliver, listen_once, menu_follows
+from voice_agent.__main__ import build_face_service, deliver, listen_once, menu_follows
 from voice_agent.agent import Reply
 
 
@@ -136,3 +137,19 @@ def test_reply_is_spoken_even_with_no_gesture_controller(config):
 def test_other_fallbacks_are_still_spoken(config):
     reply = Reply(config.fallback_phrases.not_heard, fallback="not_heard")
     assert menu_follows(reply, config) is False
+
+
+def test_no_face_service_when_face_memory_is_disabled(config):
+    assert build_face_service(config) is None
+
+
+def test_face_memory_failure_turns_the_face_tools_off(config, monkeypatch, capsys):
+    face_memory = pytest.importorskip("face_memory")
+
+    def broken(face_config):
+        raise RuntimeError("models missing")
+
+    monkeypatch.setattr(face_memory, "build_service", broken)
+    config.face = object()
+    assert build_face_service(config) is None
+    assert "enroll_face and who_is_here are off: models missing" in capsys.readouterr().err
