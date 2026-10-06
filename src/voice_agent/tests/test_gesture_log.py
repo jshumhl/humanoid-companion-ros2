@@ -13,13 +13,13 @@ def read_lines(path):
 def test_records_the_utterance_and_the_chosen_gesture(tmp_path):
     path = tmp_path / "gestures.log"
     log = GestureLog(path)
-    log.record("你好！", "hello", "你好，我是巴克机器人。")
+    log.record("你好！", "hello", "你好，我是八客机器人。")
     log.close()
 
     entry = read_lines(path)[0]
     assert entry["user"] == "你好！"
     assert entry["gesture"] == "hello"
-    assert entry["reply"] == "你好，我是巴克机器人。"
+    assert entry["reply"] == "你好，我是八客机器人。"
     assert entry["time"]
 
 

@@ -6,14 +6,14 @@ from voice_agent.protocol import (
 
 
 @pytest.mark.parametrize("raw, expected", [
-    ('{"say": "我是巴克机器人。"}', Say("我是巴克机器人。")),
+    ('{"say": "我是八客机器人。"}', Say("我是八客机器人。")),
     ('{"tool": "look_around", "args": {}}', ToolCall("look_around", {})),
     ('{"tool": "look_around"}', ToolCall("look_around", {})),
     ('{"tool": "look_around", "args": null}', ToolCall("look_around", {})),
     ('```json\n{"say": "你好。"}\n```', Say("你好。")),
     ('好的：{"say": "你好。"} 以上', Say("你好。")),
     ('  {"say": "  你好。 "}  ', Say("你好。")),
-    ("我是巴克机器人。", Say("我是巴克机器人。")),  # plain text, format ignored
+    ("我是八客机器人。", Say("我是八客机器人。")),  # plain text, format ignored
     # A gesture may ride along with either kind of reply
     ('{"say": "你好。", "gesture": "hello"}', Say("你好。", "hello")),
     ('{"say": "你好。", "gesture": " hello "}', Say("你好。", "hello")),
@@ -54,7 +54,7 @@ def test_clean_spoken_keeps_the_whole_reply():
 
 
 def test_clean_spoken_strips_markdown_and_emoji():
-    assert clean_spoken("**我是** 巴克机器人 😊。") == "我是 巴克机器人。"
+    assert clean_spoken("**我是** 八客机器人 😊。") == "我是 八客机器人。"
 
 
 def test_clean_spoken_empty():

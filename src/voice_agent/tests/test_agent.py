@@ -18,10 +18,10 @@ def make_agent(config, provider, describe_scene=lambda _: SCENE):
 
 
 def test_who_are_you(config, fake_provider):
-    provider = fake_provider(['{"say": "我是巴克机器人。很高兴认识你！"}'])
+    provider = fake_provider(['{"say": "我是八客机器人。很高兴认识你！"}'])
     reply = make_agent(config, provider).respond_to_text("你是谁？")
 
-    assert reply.text == "我是巴克机器人。很高兴认识你！"
+    assert reply.text == "我是八客机器人。很高兴认识你！"
     assert not reply.tool and not reply.fallback
 
 
@@ -40,16 +40,16 @@ def test_system_prompt_has_persona_and_tool_catalog(config, fake_provider):
 
     system = provider.chat_calls[0][0]
     assert system["role"] == "system"
-    assert "巴克机器人" in system["content"]
+    assert "八客机器人" in system["content"]
     assert "- look_around()：" in system["content"]
     assert "{tools}" not in system["content"]
 
 
 def test_catalogued_gesture_rides_along_with_the_reply(config, fake_provider):
-    provider = fake_provider(['{"say": "你好，我是巴克机器人。", "gesture": "hello"}'])
+    provider = fake_provider(['{"say": "你好，我是八客机器人。", "gesture": "hello"}'])
     reply = make_agent(config, provider).respond_to_text("你好")
 
-    assert reply.text == "你好，我是巴克机器人。"
+    assert reply.text == "你好，我是八客机器人。"
     assert reply.gesture == "hello"
 
 
@@ -128,7 +128,7 @@ def test_every_turn_is_logged_with_its_gesture_or_none(config, fake_provider):
 
 
 def test_history_kept_across_turns(config, fake_provider):
-    provider = fake_provider(['{"say": "我是巴克机器人。"}', '{"tool": "look_around"}', '{"say": "好的。"}'])
+    provider = fake_provider(['{"say": "我是八客机器人。"}', '{"tool": "look_around"}', '{"say": "好的。"}'])
     agent = make_agent(config, provider)
     agent.respond_to_text("你是谁？")
     agent.respond_to_text("你看见什么？")

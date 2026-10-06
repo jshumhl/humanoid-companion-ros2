@@ -6,7 +6,7 @@ setting up the robot, not for the person talking to it.
 
 import time
 
-TEST_PHRASE = "你好，我是巴克机器人。"
+TEST_PHRASE = "你好，我是八客机器人。"
 MIC_SECONDS = 3
 ASR_SECONDS = 4
 

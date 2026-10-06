@@ -19,7 +19,7 @@ DEFAULT_CONFIG = Path(__file__).resolve().parent.parent / "config.yaml"
 def parse_args(argv):
     parser = argparse.ArgumentParser(
         prog="voice_agent",
-        description="巴克机器人 voice agent: push-to-talk → ASR → LLM (with tools) → TTS.",
+        description="八客机器人 voice agent: push-to-talk → ASR → LLM (with tools) → TTS.",
     )
     parser.add_argument("--config", default=str(DEFAULT_CONFIG), help="path to config.yaml")
     parser.add_argument("--text", action="store_true",
@@ -177,7 +177,7 @@ def show_reply(reply, say_reply=True):
     tags = [f"tool={reply.tool}"] if reply.tool else []
     tags += [f"fallback={reply.fallback}"] if reply.fallback else []
     tags += [f"gesture={reply.gesture}"] if reply.gesture else []
-    print(f"巴克：{reply.text}" + (f"   [{', '.join(tags)}]" if tags else ""), flush=True)
+    print(f"八客：{reply.text}" + (f"   [{', '.join(tags)}]" if tags else ""), flush=True)
 
 
 def deliver(reply, speech, say_reply=True, gestures=None):

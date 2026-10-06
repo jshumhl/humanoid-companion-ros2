@@ -1,6 +1,6 @@
 # voice_agent
 
-A voice agent for **巴克机器人** (Bake Robot). You press Enter, ask a question
+A voice agent for **八客机器人** (Bake Robot). You press Enter, ask a question
 in Mandarin, and the robot answers out loud. When you ask what it sees, it
 looks through the camera.
 
@@ -43,13 +43,13 @@ Push-to-talk: Enter to start recording, Enter again to stop. q + Enter to quit.
 Recording... press Enter to stop.
 
 你：你是谁。
-巴克：我是巴克机器人。我是一个陪伴你左右的人形机器人，很高兴认识你！
+八客：我是八客机器人。我是一个陪伴你左右的人形机器人，很高兴认识你！
 
 [Enter] to talk:
 Recording... press Enter to stop.
 
 你：你看见什么。
-巴克：我看到了四个人和一辆公交车。   [tool=look_around]
+八客：我看到了四个人和一辆公交车。   [tool=look_around]
 ```
 
 For the second question, the model replies `{"tool": "look_around", "args": {}}`.
@@ -133,9 +133,9 @@ leaving the conversation there:
 
 ```
 你：你是谁？
-巴克：我现在连不上网络。你可以说 一 检查设置，二 重试，三 退出。
+八客：我现在连不上网络。你可以说 一 检查设置，二 重试，三 退出。
 你：二
-巴克：好的，我再试一次。
+八客：好的，我再试一次。
 ```
 
 The menu's opening line replaces the plain `offline` phrase, so the robot
@@ -215,7 +215,7 @@ be spoken, it is still printed.
 The system prompt tells the model to output exactly one JSON object:
 
 ```json
-{"say": "我是巴克机器人。"}
+{"say": "我是八客机器人。"}
 {"tool": "look_around", "args": {}}
 ```
 
@@ -310,7 +310,7 @@ Conversation history records roughly what was actually heard, estimated from
 how long the audio played:
 
 ```json
-{"say": "我是巴克机器人。", "interrupted": true, "note": "用户打断了这句话，后面的内容没有说完"}
+{"say": "我是八客机器人。", "interrupted": true, "note": "用户打断了这句话，后面的内容没有说完"}
 ```
 
 Without it the model assumes its whole reply landed, and answers follow-up
@@ -330,10 +330,10 @@ waits:
 
 ```
 你：请用五句话讲讲你自己
-巴克：我是巴克机器人。我是一个人形陪伴机器人，专门来陪大家聊天的。我虽然不能像人类一样吃饭睡觉，但我可以一直陪在你身边。
-巴克：还要继续吗？
+八客：我是八客机器人。我是一个人形陪伴机器人，专门来陪大家聊天的。我虽然不能像人类一样吃饭睡觉，但我可以一直陪在你身边。
+八客：还要继续吗？
 你：继续
-巴克：如果你好奇周围有什么，我还能用眼睛帮你看看。很高兴能成为你的朋友！
+八客：如果你好奇周围有什么，我还能用眼睛帮你看看。很高兴能成为你的朋友！
 ```
 
 The rest is spoken only if the answer contains one of
@@ -344,7 +344,7 @@ The rest is spoken only if the answer contains one of
 The model may attach at most one gesture to a reply:
 
 ```json
-{"say": "你好，我是巴克机器人。", "gesture": "hello"}
+{"say": "你好，我是八客机器人。", "gesture": "hello"}
 {"tool": "look_around", "gesture": "point"}
 ```
 
@@ -371,7 +371,7 @@ gestures:
 
 examples:
   - user: 你好！
-    say: 你好，我是巴克机器人。
+    say: 你好，我是八客机器人。
     gesture: hello
   - user: 现在几点？
     say: 现在是下午三点十分。
@@ -415,7 +415,7 @@ file and inserted in place of `{gestures}`:
 
 例子：
 用户：你好！
-你：{"say": "你好，我是巴克机器人。很高兴认识你！", "gesture": "hello"}
+你：{"say": "你好，我是八客机器人。很高兴认识你！", "gesture": "hello"}
 用户：现在几点？
 你：{"say": "现在是下午三点十分。", "gesture": null}
 用户：洗手间在哪边？
@@ -430,7 +430,7 @@ changes, and the robot side decides what a name means.
 Every turn is appended to a rotating log, one JSON object per line:
 
 ```json
-{"time": "2026-09-21T18:15:03", "user": "你好！", "gesture": "hello", "reply": "你好呀，我是巴克机器人。…"}
+{"time": "2026-09-21T18:15:03", "user": "你好！", "gesture": "hello", "reply": "你好呀，我是八客机器人。…"}
 {"time": "2026-09-21T18:15:05", "user": "现在几点？", "gesture": null, "reply": "现在是下午三点半。"}
 ```
 
