@@ -1,6 +1,6 @@
 # First-time setup (Ubuntu 22.04)
 
-This guide takes a fresh Ubuntu 22.04 machine to a working 巴克机器人 voice
+This guide takes a fresh Ubuntu 22.04 machine to a working 八客机器人 voice
 agent: you press Enter, ask 你是谁？ or 你看见什么？, and the robot answers out
 loud. You test the speaker, microphone, camera and cloud connection one at a
 time before starting the agent, so a problem is easy to trace to one part.
@@ -218,7 +218,7 @@ speaker-test -t wav -c 2 -l 1        # you should hear "Front Left", "Front Righ
 python -m voice_agent --check speaker
 ```
 
-The second command speaks 你好，我是巴克机器人。 through edge-tts and asks
+The second command speaks 你好，我是八客机器人。 through edge-tts and asks
 whether you heard it.
 
 - **No sound from `speaker-test`:** check the volume with `alsamixer` and the
@@ -268,7 +268,7 @@ Expected output:
 
 ```
 Raw chat reply: '好'
-你是谁？ → 我是巴克机器人。…   [tool=-, fallback=-]
+你是谁？ → 我是八客机器人。…   [tool=-, fallback=-]
 你看见什么？ → （摄像头检查已跳过）   [tool=look_around, fallback=-]
 PASS
 ```
@@ -374,7 +374,7 @@ python -m voice_agent
 ```
 
 1. Press **Enter** and say 你是谁？
-2. Press **Enter** again to stop recording. The robot answers 我是巴克机器人。…
+2. Press **Enter** again to stop recording. The robot answers 我是八客机器人。…
 3. Press **Enter** and say 你看见什么？, then **Enter**. The robot looks
    through the camera and says, for example, 我看到了两个人和一把椅子。
 4. Type **q** and press Enter to quit.

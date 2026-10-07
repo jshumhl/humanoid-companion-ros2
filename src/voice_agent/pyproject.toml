@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "voice_agent"
 version = "0.2.0"
-description = "Conversational voice agent for 巴克机器人"
+description = "Conversational voice agent for 八客机器人"
 requires-python = ">=3.10"
 dependencies = [
     "object_narrator",

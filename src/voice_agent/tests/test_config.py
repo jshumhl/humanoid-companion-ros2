@@ -63,7 +63,7 @@ def test_inline_catalogue_is_rejected_with_a_pointer_to_the_file(tmp_path):
 
 def test_gestures_can_be_disabled_without_a_prompt_placeholder(tmp_path):
     config = load_config(write_config(tmp_path, gestures__enabled=False,
-                                      system_prompt="你是巴克机器人。{tools}"))
+                                      system_prompt="你是八客机器人。{tools}"))
     assert config.gestures.enabled is False
 
 
@@ -111,7 +111,7 @@ def test_device_name_allowed(tmp_path):
     ({"speech_output__engine": "espeak"}, "speech_output.engine must be one of"),
     ({"timeouts__llm_sec": -1}, "timeouts.llm_sec must be > 0"),
     ({"system_prompt": DELETE}, "Missing required key: system_prompt"),
-    ({"system_prompt": "你是巴克机器人。"}, "{tools} placeholder"),
+    ({"system_prompt": "你是八客机器人。"}, "{tools} placeholder"),
     ({"fallback_phrases__offline": " "}, "fallback_phrases.offline must not be empty"),
     ({"providers": ["dashscope"]}, "providers must be dict"),
     ({"narrator_config": "/nonexistent/config.yaml"}, "narrator_config: file not found"),
@@ -122,7 +122,7 @@ def test_device_name_allowed(tmp_path):
      "gestures.catalogue_file: Gesture catalogue not found"),
     ({"gestures__log_max_bytes": 0}, "gestures.log_max_bytes must be > 0"),
     ({"gestures__log_backups": -1}, "gestures.log_backups must be >= 0"),
-    ({"system_prompt": "你是巴克机器人。{tools}"}, "{gestures} placeholder"),
+    ({"system_prompt": "你是八客机器人。{tools}"}, "{gestures} placeholder"),
     ({"local_asr__model_path": " "}, "local_asr.model_path must not be empty"),
     ({"audio__sample_rate": 48000}, "audio.sample_rate must be 16000 when local_asr.enabled"),
     ({"offline_menu__max_attempts": 0}, "offline_menu.max_attempts must be >= 1"),

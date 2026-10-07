@@ -1,4 +1,4 @@
-# Gesture catalogue for 巴克机器人.
+# Gesture catalogue for 八客机器人.
 #
 # This file decides which gestures exist and, through `use_when`, when the
 # model reaches for them. The system prompt's gesture section is built from it
@@ -33,7 +33,7 @@ gestures:
 # which is the common case. `gesture: null` means no gesture.
 examples:
   - user: 你好！
-    say: 你好，我是巴克机器人。很高兴认识你！
+    say: 你好，我是八客机器人。很高兴认识你！
     gesture: hello
 
   - user: 现在几点？

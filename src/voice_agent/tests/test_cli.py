@@ -107,10 +107,10 @@ def test_offline_reply_is_spoken_when_menu_disabled(config):
 
 def test_gesture_is_requested_when_the_reply_is_spoken(config, capsys):
     speech, gestures = FakeSpeech(), FakeGestures()
-    deliver(Reply("你好，我是巴克机器人。", gesture="hello"), speech, gestures=gestures)
+    deliver(Reply("你好，我是八客机器人。", gesture="hello"), speech, gestures=gestures)
 
     assert gestures.requested == ["hello"]
-    assert speech.spoken == ["你好，我是巴克机器人。"]
+    assert speech.spoken == ["你好，我是八客机器人。"]
     assert "gesture=hello" in capsys.readouterr().out
 
 

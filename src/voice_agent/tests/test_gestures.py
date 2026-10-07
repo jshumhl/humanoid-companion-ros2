@@ -121,12 +121,12 @@ def test_prompt_section_states_the_rules():
 
 def test_prompt_section_includes_the_examples():
     examples = [
-        GestureExample("你好！", "你好，我是巴克机器人。", "hello"),
+        GestureExample("你好！", "你好，我是八客机器人。", "hello"),
         GestureExample("现在几点？", "现在是下午三点。", None),
     ]
     text = GestureCatalogue(CATALOGUE, examples).prompt_section()
     assert '用户：你好！' in text
-    assert '你：{"say": "你好，我是巴克机器人。", "gesture": "hello"}' in text
+    assert '你：{"say": "你好，我是八客机器人。", "gesture": "hello"}' in text
     assert '你：{"say": "现在是下午三点。", "gesture": null}' in text  # the "no gesture" case
 
 
@@ -199,7 +199,7 @@ gestures:
     duration: 1.5
 examples:
   - user: 你好！
-    say: 你好，我是巴克机器人。
+    say: 你好，我是八客机器人。
     gesture: hello
   - user: 现在几点？
     say: 现在是三点。

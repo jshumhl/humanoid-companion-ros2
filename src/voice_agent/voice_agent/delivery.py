@@ -207,4 +207,4 @@ class ReplyDelivery:
             log.info(message, source, len(spoken), latency_ms)
 
     def _show_line(self, text):
-        print(f"巴克：{text}", flush=True)
+        print(f"八客：{text}", flush=True)
